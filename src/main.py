@@ -1,6 +1,5 @@
 import os
 import sys
-import logging
 import json
 from pathlib import Path
 from reader import Reader
@@ -8,21 +7,28 @@ from header_mapper import HeaderMapper
 from data_transformer import DataTransformer
 from validator import Validator
 from output_generator import OutputGenerator
+import logging
 
-# Configure logging to output to both file and console
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('validation.log')
-    ]
-)
+def setup_logging(debug_mode=False):
+    """Configure logging settings."""
+    log_level = logging.DEBUG if debug_mode else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format='%(message)s',  # Simplified format for better UX
+        handlers=[
+            logging.FileHandler('validation.log'),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    # Suppress debug messages from other modules
+    if not debug_mode:
+        logging.getLogger('urllib3').setLevel(logging.WARNING)
+        logging.getLogger('matplotlib').setLevel(logging.WARNING)
+        logging.getLogger('PIL').setLevel(logging.WARNING)
 
-# Force stdout to flush immediately
-sys.stdout.reconfigure(line_buffering=True)
-
-logger = logging.getLogger(__name__)
+def print_header(text):
+    """Print a formatted header."""
+    print(f"\n{'='*80}\n{text.center(80)}\n{'='*80}\n")
 
 def get_output_path(input_path: str) -> str:
     """Generate output path based on input path."""
@@ -36,8 +42,12 @@ def get_output_path(input_path: str) -> str:
 
 def main():
     if len(sys.argv) != 2:
-        logger.error("Usage: python main.py <input_file_or_directory>")
+        print("Usage: python main.py <input_file_or_directory>")
         sys.exit(1)
+
+    # Set up logging without debug messages
+    setup_logging(debug_mode=False)
+    logger = logging.getLogger(__name__)
 
     input_path = sys.argv[1]
     if not os.path.exists(input_path):
@@ -47,7 +57,7 @@ def main():
     # Get output path
     output_path = get_output_path(input_path)
     
-    # Get the absolute path to schema.json
+    # Get schema path
     current_dir = Path(__file__).parent
     schema_path = current_dir / 'schema.json'
     
@@ -56,6 +66,8 @@ def main():
         sys.exit(1)
 
     try:
+        print_header("Starting Data Processing")
+        
         # Initialize components
         reader = Reader()
         mapper = HeaderMapper(str(schema_path))
@@ -68,55 +80,101 @@ def main():
         generator = OutputGenerator(schema)
 
         # Read input
-        logger.info(f"Reading input from: {input_path}")
+        print("\nReading input files...")
         data = reader.read_files(input_path)
         
         # Map headers
         mappings = {}
         for tab_name, df in data.items():
-            logger.info(f"Processing tab: {tab_name}")
-            mappings[tab_name] = mapper.map_headers(df.columns, tab_name)
+            print_header(f"Processing {tab_name} Tab")
+            
+            # Check if tab is empty
+            if df.empty:
+                print(f"\nSkipping empty tab: {tab_name}")
+                continue
+
+            # Ask if user wants to process this tab
+            while True:
+                choice = input(f"\nProcess '{tab_name}' tab? (y/n): ").lower()
+                if choice in ['y', 'n']:
+                    break
+                print("Please enter 'y' for yes or 'n' for no.")
+
+            if choice == 'n':
+                print(f"\nSkipping tab: {tab_name}")
+                continue
+            
+            # First attempt automatic mapping based on synonyms
+            initial_mappings = mapper.map_headers(df.columns, tab_name)
+            
+            # Check for missing mandatory fields
+            mandatory_fields = mapper.get_mandatory_fields(tab_name)
+            mapped_mandatory = set(v for v in initial_mappings.values() if v in mandatory_fields)
+            missing_mandatory = set(mandatory_fields) - mapped_mandatory
+            
+            if missing_mandatory:
+                print("\nMandatory fields requiring mapping:")
+                for field in missing_mandatory:
+                    print(f"  • {field}")
+            
+            # Review and confirm mappings
             mappings[tab_name] = mapper.review_mappings(
-                mappings[tab_name],
+                initial_mappings,
                 df.columns,
                 tab_name,
                 df
             )
+            
+            print(f"\n✓ Completed mapping for {tab_name}")
         
         # Transform data
-        logger.info("Transforming data...")
-        transformed_data = transformer.transform_data(data, mappings)
+        print("\nTransforming data...")
+        transformed_data = {}
+        for tab_name, df in data.items():
+            if tab_name not in mappings:
+                continue
+                
+            try:
+                print(f"\nTransforming {tab_name} tab...")
+                transformed_df = transformer.transform_data_tab(
+                    df, 
+                    mappings[tab_name],
+                    tab_name
+                )
+                if not transformed_df.empty:
+                    transformed_data[tab_name] = transformed_df
+            except Exception as e:
+                logger.error(f"Error transforming {tab_name} tab: {str(e)}")
+                print(f"⚠️  Failed to transform {tab_name} tab. Skipping...")
+                continue
         
-        # Split and process relationships
-        entity_data = {
-            k: v for k, v in transformed_data.items() 
-            if k in ["Users", "Groups", "Roles", "Resources"]
-        }
-        rel_data = {
-            k: v for k, v in transformed_data.items() 
-            if k not in entity_data
-        }
+        if not transformed_data:
+            raise Exception("No data was successfully transformed")
         
-        # Resolve relationships
-        logger.info("Resolving relationships...")
+        # Process relationships
+        print("\nProcessing relationships...")
+        entity_data = {k: v for k, v in transformed_data.items() 
+                      if k in ["Users", "Groups", "Roles", "Resources"]}
+        rel_data = {k: v for k, v in transformed_data.items() 
+                   if k not in entity_data}
+        
         transformed_rel = transformer.resolve_relationships(entity_data, rel_data)
         transformed_data.update(transformed_rel)
         
-        # Validate and separate valid/invalid records
-        logger.info("Validating data...")
+        # Validate data
+        print("\nValidating data...")
         valid_data, invalid_data = validator.validate_data(transformed_data)
         
-        # Generate output for valid records
-        logger.info(f"Generating output file: {output_path}")
+        # Generate output
+        print(f"\nGenerating output file: {output_path}")
         generator.generate_excel(valid_data, output_path)
         
-        # Generate output for invalid records if any exist
         if any(not df.empty for df in invalid_data.values()):
             invalid_path = str(Path(output_path).parent / f"invalid_records_{Path(output_path).name}")
-            logger.info(f"Generating invalid records file: {invalid_path}")
+            print(f"Generating invalid records file: {invalid_path}")
             generator.generate_excel(invalid_data, invalid_path)
         
-        logger.info("Processing completed successfully!")
+        print("\n✓ Processing completed successfully!")
         return 0
 
     except Exception as e:

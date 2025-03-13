@@ -12,6 +12,7 @@ If you don't have data for one or more entities, you can leave the respective ta
 
 - Every record in the **Users** tab must include at least one of the following fields: `user_id`, `username`, or `email`.
 - Either `first_name` + `last_name` **or** `full_name` is mandatory.
+  - `full_name` should be a concatenation of `first_name` and `last_name`.
 - The `is_active` field should have a value of either **Yes** or **No**.
 - The fields `create_at`, `updated_at`, and `last_login_at` must follow a valid datetime format. For example `2023-01-01T12:00:00.00Z`  
   - Convert datetime to ISO 8601
@@ -28,6 +29,7 @@ If you don't have data for one or more entities, you can leave the respective ta
 ### Groups:
 
 - Every record in the **Groups** tab must include at least one of the following fields: `group_id` or `group_name`.
+  - If `group_id` is not provided, populate with value of `group_name`.
 
 ### Roles:
 
