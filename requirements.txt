@@ -1,0 +1,6 @@
+pandas
+openpyxl
+fuzzywuzzy
+inquirer
+python-Levenshtein
+PyYAML

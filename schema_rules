@@ -1,0 +1,95 @@
+# Spreadsheet Format - Guidelines
+
+The spreadsheet file consists of multiple tabs. Each tab represents either entity data or the relationship between two entities.
+
+If you don't have data for one or more entities, you can leave the respective tab(s) empty.
+
+## Clarifications for Each Tab
+
+## Entities Tabs
+
+### Users:
+
+- Every record in the **Users** tab must include at least one of the following fields: `user_id`, `username`, or `email`.
+- Either `first_name` + `last_name` **or** `full_name` is mandatory.
+- The `is_active` field should have a value of either **Yes** or **No**.
+- The fields `create_at`, `updated_at`, and `last_login_at` must follow a valid datetime format. For example `2023-01-01T12:00:00.00Z`  
+  - Convert datetime to ISO 8601
+    ```python
+    from datetime import datetime
+
+    # Convert the date string to a datetime object
+    dt = datetime.strptime(date_str, "%d/%m/%Y %H:%M:%S")  # Adjust format if needed
+
+    # Convert to ISO 8601 format with UTC (adding 'Z' at the end)
+    iso_format = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    ```
+
+### Groups:
+
+- Every record in the **Groups** tab must include at least one of the following fields: `group_id` or `group_name`.
+
+### Roles:
+
+- Every record in the **Roles** tab must include at least one of the following fields: `role_id` or `role_name`.
+- The `permissions` field should contain values separated by commas.
+
+### Resources:
+
+- Every record in the **Resources** tab must include at least one of the following fields: `resource_id` or `resource_name`.
+   
+
+## Relationship Tabs
+
+### User Groups:
+
+- All fields must be populated in each row.
+- **user_id** population:
+    - If the `user_id` field was provided in the **Users** tab, use it in the current tab.
+    - If `user_id` was not provided, but both `username` and `email` were, populate `username` under `user_id`.
+    - If only `username` was provided, populate `username` under `user_id`.
+    - If only `email` was provided, populate `email` under `user_id`.
+- **group_id** population:
+    - If `group_id` was provided in the **Groups** tab, use it in the current tab.
+    - If `group_id` was not provided, populate `group_name`.
+        
+
+### User Roles:
+
+- All fields must be populated in each row.
+- **user_id** population:
+    - Follow the same rules as described in the **User Groups** section for populating `user_id`.
+- **role_id** population:
+    - If `role_id` was provided in the **Roles** tab, use it in the current tab.
+    - If `role_id` was not provided, populate `role_name`.
+     
+
+### Group Roles:
+
+- All fields must be populated in each row.
+- **group_id** population:
+    - If `group_id` was provided in the **Groups** tab, use it in the current tab.
+    - If `group_id` was not provided, populate `group_name`.
+- **role_id** population:
+    - If `role_id` was provided in the **Roles** tab, use it in the current tab.
+    - If `role_id` was not provided, populate `role_name`.
+       
+
+### User Resources:
+
+- All fields must be populated in each row.
+- **user_id** population:
+    - Follow the same rules as described in the **User Groups** section for populating `user_id`.
+- **resource_id** population:
+    - If `resource_id` was provided in the **Resources** tab, use it in the current tab.
+    - If `resource_id` was not provided, populate `resource_name`.       
+
+### Role Resources:
+
+- All fields must be populated in each row.
+- **role_id** population:
+    - If `role_id` was provided in the **Roles** tab, use it in the current tab.
+    - If `role_id` was not provided, populate `role_name`.
+- **resource_id** population:
+    - If `resource_id` was provided in the **Resources** tab, use it in the current tab.
+    - If `resource_id` was not provided, populate `resource_name`.

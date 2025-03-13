@@ -1,0 +1,179 @@
+{
+  "Users": {
+    "user_id": {
+      "type": "string",
+      "synonyms": ["user_id", "userid", "uid", "user identifier", "id", "user", "user-id", "user.id", "user_number", "usernumber", "user key", "user.key"],
+      "mandatory": true
+    },
+    "username": {
+      "type": "string",
+      "synonyms": ["username", "user name", "login", "login name", "loginname", "user.name", "user-name", "login_name", "login-name", "alias", "screen name", "screenname", "display name", "displayname"],
+      "mandatory": false
+    },
+    "email": {
+      "type": "string",
+      "synonyms": ["email", "mail", "email_address", "emailaddress", "e-mail", "email_id", "mail_id", "user_email", "user.email", "contact_email", "primary email", "primary_email", "email contact", "email_contact"],
+      "mandatory": false
+    },
+    "first_name": {
+      "type": "string",
+      "synonyms": ["first_name", "fname", "given_name", "firstname", "first", "given", "name.first", "first.name", "given.name", "name.given", "forename", "first given name", "first_given_name"],
+      "mandatory": false
+    },
+    "last_name": {
+      "type": "string",
+      "synonyms": ["last_name", "lname", "surname", "lastname", "last", "family_name", "familyname", "name.last", "last.name", "family", "surname", "family surname", "family_surname"],
+      "mandatory": false
+    },
+    "full_name": {
+      "type": "string",
+      "synonyms": ["full_name", "fullname", "complete_name", "completename", "name", "display_name", "displayname", "full legal name", "legal_name", "full_legal_name"],
+      "mandatory": false
+    },
+    "is_active": {
+      "type": "boolean",
+      "synonyms": ["active", "is_enabled", "enabled", "status", "is_active_flag", "active_status", "account_status", "user_status", "account_active", "enabled_flag", "is active", "active flag", "account enabled", "is_disabled", "disabled", "active_yn", "is_active_yn"],
+      "mandatory": false
+    },
+    "created_at": {
+      "type": "datetime",
+      "synonyms": ["creation_date", "created", "date_created", "create_date", "created_date", "creation_time", "create_timestamp", "created_timestamp", "creation", "date_added", "account_created", "account_creation_date", "registration_date", "registered_on"],
+      "mandatory": false
+    },
+    "updated_at": {
+      "type": "datetime",
+      "synonyms": ["modification_date", "modified", "date_modified", "update_date", "modified_date", "last_update", "last_modified", "update_timestamp", "modified_timestamp", "last_updated", "date_updated", "last_change", "last_changed", "change_date"],
+      "mandatory": false
+    },
+    "last_login_at": {
+      "type": "datetime",
+      "synonyms": ["last_login", "last_login_date", "last_login_time", "last_signin", "last_signin_at", "last_signed_in", "last_access", "last_accessed", "last_session", "login_timestamp", "most_recent_login", "recent_login", "latest_login", "previous_login"],
+      "mandatory": false
+    }
+  },
+  "Groups": {
+    "group_id": {
+      "type": "string",
+      "synonyms": ["group_id", "gid", "group identifier", "group.id", "group-id", "group_number", "groupnumber", "group key", "group.key", "group_uid"],
+      "mandatory": true
+    },
+    "group_name": {
+      "type": "string",
+      "synonyms": ["group_name", "name", "groupname", "group.name", "group-name", "group_label", "group label", "team name", "team_name", "group title", "group_title"],
+      "mandatory": true
+    }
+  },
+  "Roles": {
+    "role_id": {
+      "type": "string",
+      "synonyms": ["role_id", "rid", "role identifier", "role.id", "role-id", "role_number", "rolenumber", "role key", "role.key", "role_uid"],
+      "mandatory": true
+    },
+    "role_name": {
+      "type": "string",
+      "synonyms": ["role_name", "name", "rolename", "role.name", "role-name", "role_label", "role label", "position name", "position_name", "role title", "role_title"],
+      "mandatory": true
+    },
+    "permissions": {
+      "type": "string",
+      "synonyms": ["permissions", "perms", "role_permissions", "role perms", "access_rights", "access rights", "privileges", "role_privileges", "role privileges", "access_levels", "access levels", "permission_set", "permission set"],
+      "mandatory": false
+    }
+  },
+  "Resources": {
+    "resource_id": {
+      "type": "string",
+      "synonyms": ["resource_id", "res_id", "resource identifier", "resource.id", "resource-id", "resource_number", "resourcenumber", "resource key", "resource.key", "resource_uid", "asset_id", "asset identifier"],
+      "mandatory": true
+    },
+    "resource_name": {
+      "type": "string",
+      "synonyms": ["resource_name", "name", "resourcename", "resource.name", "resource-name", "resource_label", "resource label", "asset name", "asset_name", "resource title", "resource_title"],
+      "mandatory": true
+    }
+  },
+  "User Groups": {
+    "user_id": {
+      "type": "string",
+      "synonyms": ["user_id", "userid", "uid", "user", "user identifier", "user.id", "user-id", "member_id", "member identifier", "group_member_id"],
+      "mandatory": true
+    },
+    "group_id": {
+      "type": "string",
+      "synonyms": ["group_id", "gid", "group", "group identifier", "group.id", "group-id", "assigned_group", "assigned group", "member_of_group", "member of group"],
+      "mandatory": true
+    }
+  },
+  "User Roles": {
+    "user_id": {
+      "type": "string",
+      "synonyms": ["user_id", "userid", "uid", "user", "user identifier", "user.id", "user-id", "role_user_id", "role user id", "assigned_user"],
+      "mandatory": true
+    },
+    "role_id": {
+      "type": "string",
+      "synonyms": ["role_id", "rid", "role", "role identifier", "role.id", "role-id", "assigned_role", "assigned role", "user_role", "user role"],
+      "mandatory": true
+    }
+  },
+  "Group Roles": {
+    "group_id": {
+      "type": "string",
+      "synonyms": ["group_id", "gid", "group", "group identifier", "group.id", "group-id", "role_group_id", "role group id", "assigned_group"],
+      "mandatory": true
+    },
+    "role_id": {
+      "type": "string",
+      "synonyms": ["role_id", "rid", "role", "role identifier", "role.id", "role-id", "assigned_role", "assigned role", "group_role", "group role"],
+      "mandatory": true
+    }
+  },
+  "User Resources": {
+    "user_id": {
+      "type": "string",
+      "synonyms": ["user_id", "userid", "uid", "user", "user identifier", "user.id", "user-id", "resource_user_id", "resource user id", "assigned_user"],
+      "mandatory": true
+    },
+    "resource_id": {
+      "type": "string",
+      "synonyms": ["resource_id", "res_id", "resource", "resource identifier", "resource.id", "resource-id", "assigned_resource", "assigned resource", "user_resource", "user resource"],
+      "mandatory": true
+    }
+  },
+  "Role Resources": {
+    "role_id": {
+      "type": "string",
+      "synonyms": ["role_id", "rid", "role", "role identifier", "role.id", "role-id", "resource_role_id", "resource role id", "assigned_role"],
+      "mandatory": true
+    },
+    "resource_id": {
+      "type": "string",
+      "synonyms": ["resource_id", "res_id", "resource", "resource identifier", "resource.id", "resource-id", "assigned_resource", "assigned resource", "role_resource", "role resource"],
+      "mandatory": true
+    }
+  },
+  "Group Resources": {
+    "group_id": {
+      "type": "string",
+      "synonyms": ["group_id", "gid", "group", "group identifier", "group.id", "group-id", "resource_group_id", "resource group id", "assigned_group"],
+      "mandatory": true
+    },
+    "resource_id": {
+      "type": "string",
+      "synonyms": ["resource_id", "res_id", "resource", "resource identifier", "resource.id", "resource-id", "assigned_resource", "assigned resource", "group_resource", "group resource"],
+      "mandatory": true
+    }
+  },
+  "Group Groups": {
+    "parent_group_id": {
+      "type": "string",
+      "synonyms": ["parent_group_id", "parent_id", "parent", "source_group_id"],
+      "mandatory": true
+    },
+    "child_group_id": {
+      "type": "string",
+      "synonyms": ["child_group_id", "child_id", "child", "destination_group_id"],
+      "mandatory": true
+    }
+  }
+}

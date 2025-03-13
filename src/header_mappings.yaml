@@ -1,0 +1,117 @@
+Group Groups:
+  destination_group_id: child_group_id
+  source_group_id: parent_group_id
+Group Resources:
+  group_id: group_id
+  resource_id: resource_id
+Group Roles:
+  group_id: group_id
+  role_id: role_id
+Groups:
+  Active: null
+  Description: description
+  Manager: null
+  Name: group_name
+  Type: description
+  servicenow_mappings:
+    Active: is_active
+    Manager: group_manager
+    Type: group_type
+  standard_fields:
+    description:
+    - desc
+    - group_description
+    group_id:
+    - group_id
+    - gid
+    group_name:
+    - name
+    - group_name
+Resources:
+  resource_id: resource_id
+  resource_name: resource_name
+  resource_type: type
+Role Resources:
+  resource_id: resource_id
+  role_id: role_id
+Roles:
+  permissions: null
+  role_description: description
+  role_id: role_id
+  role_name: role_name
+  servicenow_mappings:
+    permissions: role_permissions
+  standard_fields:
+    description:
+    - desc
+    - role_description
+    role_id:
+    - role_id
+    - rid
+    role_name:
+    - name
+    - role_name
+User Groups:
+  Group: group_id
+  User ID: user_id
+  servicenow_mappings:
+    User ID: user_id
+  standard_fields: {}
+User Resources:
+  resource_id: resource_id
+  user_id: user_id
+User Roles:
+  role_id: role_id
+  user_id: user_id
+Users:
+  Active: is_active
+  Class: null
+  Created: created_at
+  Created by: null
+  Email: email
+  First name: first_name
+  IDM Status: status
+  Last login: last_login_at
+  Last name: last_name
+  Updated: updated_at
+  Updated by: null
+  User ID: user_id
+  servicenow_mappings:
+    Class: user_type
+    Created by: created_by
+    First name: first_name
+    IDM Status: status
+    Last login: last_login_date
+    Last name: last_name
+    Updated: updated_at
+    Updated by: updated_by
+    User ID: user_id
+  standard_fields:
+    created_at:
+    - creation_date
+    - created
+    email:
+    - email
+    - mail
+    first_name:
+    - first_name
+    - fname
+    - given_name
+    is_active:
+    - active
+    - is_enabled
+    last_name:
+    - last_name
+    - lname
+    - surname
+    updated_at:
+    - modification_date
+    - modified
+    user_id:
+    - user_id
+    - userid
+    - uid
+    username:
+    - username
+    - user name
+    - login
