@@ -1,0 +1,23 @@
+{
+  "Users:User ID": "user_id",
+  "Users:First name": "first_name",
+  "Users:Last name": "last_name",
+  "Users:Email": "email",
+  "Users:Active": "is_active",
+  "Users:Created": "created_at",
+  "Users:Updated": "updated_at",
+  "Users:Last login": "last_login_at",
+  "Groups:Name": "group_name",
+  "User Groups:Group": "group_id",
+  "User Groups:User ID": "user_id",
+  "Email": "email",
+  "Active": "is_active",
+  "Created": "created_at",
+  "User ID": "user_id",
+  "First name": "first_name",
+  "Last name": "last_name",
+  "Updated": "updated_at",
+  "Last login": "last_login_at",
+  "Name": "group_name",
+  "Group": "group_id"
+}
