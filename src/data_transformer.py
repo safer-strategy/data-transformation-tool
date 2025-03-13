@@ -13,6 +13,7 @@ class DataTransformer:
         self.logger = logging.getLogger(__name__)
         with open(schema_file) as f:
             self.schema = json.load(f)
+        self.group_id_map = {}  # Store mapping between original group identifiers and new incremental IDs
 
     def transform_data_tab(self, df: pd.DataFrame, mappings: Dict[str, str], tab_name: str) -> pd.DataFrame:
         """Transform data for a specific tab."""
@@ -61,8 +62,13 @@ class DataTransformer:
                     transformed[field] = transformed[field].apply(self._transform_datetime_to_iso)
         
         elif tab_name == "Groups" and not transformed.empty:
-            if 'group_id' not in transformed.columns and 'group_name' in transformed.columns:
-                transformed['group_id'] = transformed['group_name'].copy()
+            # Add incremental group_id
+            transformed['group_id'] = range(1, len(transformed) + 1)
+            
+            # Store mapping for relationship resolution
+            for idx, row in transformed.iterrows():
+                if 'group_name' in transformed.columns and pd.notna(row['group_name']):
+                    self.group_id_map[str(row['group_name'])] = row['group_id']
         
         return transformed
 
@@ -86,10 +92,17 @@ class DataTransformer:
 
     def _transform_groups(self, df: pd.DataFrame) -> pd.DataFrame:
         """Transform Groups tab data."""
-        # If group_id is missing but group_name is present, use group_name as group_id
-        if 'group_id' not in df.columns and 'group_name' in df.columns:
-            df['group_id'] = df['group_name']
-        return df
+        if df.empty:
+            return df
+        
+        # Create a new DataFrame to avoid modifying the original
+        transformed_df = df.copy()
+        
+        # If group_name is not present, return empty DataFrame
+        if 'group_name' not in transformed_df.columns:
+            return pd.DataFrame()
+        
+        return transformed_df
 
     def _transform_roles(self, df: pd.DataFrame) -> pd.DataFrame:
         """Transform Roles tab data."""
@@ -107,24 +120,30 @@ class DataTransformer:
 
     def _transform_relationships(self, df: pd.DataFrame, tab_name: str) -> pd.DataFrame:
         """Transform relationship tab data."""
-        # Apply relationship-specific transformations based on schema rules
-        return df
+        if df.empty:
+            return df
+            
+        transformed_df = df.copy()
+        
+        if tab_name == "User Groups" and 'group_id' in transformed_df.columns:
+            # Map the group_id to the new incremental IDs
+            transformed_df['group_id'] = transformed_df['group_id'].apply(
+                lambda x: self.group_id_map.get(str(x), x) if pd.notna(x) else x
+            )
+            
+        return transformed_df
 
     def resolve_relationships(self, entity_data: Dict[str, pd.DataFrame], rel_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
         """Resolve relationships using transformed entity data."""
+        # First transform the Groups data to establish group_id mapping
+        if 'Groups' in entity_data:
+            entity_data['Groups'] = self._transform_groups(entity_data['Groups'])
+        
         transformed_rel = {}
-        
-        # Update group references in relationship tables
         for rel_name, rel_df in rel_data.items():
-            if 'group_id' in rel_df.columns and 'Groups' in entity_data:
-                groups_df = entity_data['Groups']
-                # If the relationship table has group_name instead of group_id, map it
-                if rel_df['group_id'].isin(groups_df['group_name']).any():
-                    group_mapping = dict(zip(groups_df['group_name'], groups_df['group_id']))
-                    rel_df['group_id'] = rel_df['group_id'].map(group_mapping)
+            transformed_df = self._transform_relationships(rel_df, rel_name)
+            transformed_rel[rel_name] = transformed_df
             
-            transformed_rel[rel_name] = rel_df
-        
         return transformed_rel
 
     def _transform_boolean_to_yes_no(self, value) -> str:

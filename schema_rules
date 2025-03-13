@@ -29,7 +29,7 @@ If you don't have data for one or more entities, you can leave the respective ta
 ### Groups:
 
 - Every record in the **Groups** tab must include at least one of the following fields: `group_id` or `group_name`.
-  - If `group_id` is not provided, populate with value of `group_name`.
+- If `group_id` is unpopulated, populate with an incrementing number.
 
 ### Roles:
 
@@ -53,7 +53,7 @@ If you don't have data for one or more entities, you can leave the respective ta
     - If only `email` was provided, populate `email` under `user_id`.
 - **group_id** population:
     - If `group_id` was provided in the **Groups** tab, use it in the current tab.
-    - If `group_id` was not provided, populate `group_name`.
+    - If `group_id` was not provided, populate with the number associated in the **Groups** tab.
         
 
 ### User Roles:
@@ -71,11 +71,10 @@ If you don't have data for one or more entities, you can leave the respective ta
 - All fields must be populated in each row.
 - **group_id** population:
     - If `group_id` was provided in the **Groups** tab, use it in the current tab.
-    - If `group_id` was not provided, populate `group_name`.
+    - If `group_id` was not provided, populate with the number associated in the **Groups** tab.
 - **role_id** population:
     - If `role_id` was provided in the **Roles** tab, use it in the current tab.
-    - If `role_id` was not provided, populate `role_name`.
-       
+    - If `role_id` was not provided, populate `role_name`.   
 
 ### User Resources:
 
