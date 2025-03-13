@@ -1,120 +1,186 @@
+import sys
 import pandas as pd
+from typing import Dict, Tuple
 import logging
-import json
-from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
 class Validator:
     """Validates transformed data against schema rules."""
 
-    def __init__(self, schema_path: str):
+    def __init__(self, schema: Dict):
         """Initialize validator with schema.
 
         Args:
-            schema_path: Path to the schema JSON file
+            schema: The schema dictionary
         """
-        with open(schema_path, 'r') as f:
-            self.schema = json.load(f)
+        self.schema = schema
+        # Force stdout for immediate output
+        self.stdout = sys.stdout
 
-    def validate_data(self, data: Dict[str, pd.DataFrame]) -> None:
-        """Validate transformed data against schema rules.
+    def validate_data(self, data: Dict[str, pd.DataFrame]) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
+        """Validate transformed data against schema rules."""
+        valid_data = {}
+        invalid_data = {}
 
-        Args:
-            data: Dictionary mapping tab names to DataFrames
-
-        Raises:
-            ValueError: If validation fails
-        """
         for tab_name, df in data.items():
-            logger.debug(f"Validating tab: {tab_name}")
-            
-            if tab_name == "Users":
-                self._validate_users_tab(df)
-            elif tab_name in [
-                "User Groups",
-                "User Roles",
-                "Group Roles",
-                "User Resources",
-                "Role Resources",
-                "Group Groups"
-            ]:
-                self._validate_relationship_tab(df, tab_name)
+            # Force print to stdout
+            self.stdout.write(f"\n{'='*50}\n")
+            self.stdout.write(f"Processing {tab_name}\n")
+            self.stdout.write(f"{'='*50}\n")
+            self.stdout.write(f"Total records: {len(df)}\n")
+            self.stdout.flush()  # Force flush the output
 
-    def _validate_users_tab(self, df: pd.DataFrame) -> None:
-        """Validate Users tab specific rules.
+            if df.empty:
+                self.stdout.write(f"Tab {tab_name} is empty, skipping validation\n")
+                self.stdout.flush()
+                continue
 
-        Args:
-            df: DataFrame containing user data
+            try:
+                if tab_name == "Users":
+                    # Perform validations
+                    validation_results = self._validate_users(df)
+                    
+                    # Print validation results immediately
+                    self.stdout.write("\nValidation Results for Users:\n")
+                    for check, (is_valid, reasons) in validation_results.items():
+                        self.stdout.write(f"\n{check} check:\n")
+                        for reason in reasons:
+                            self.stdout.write(f"- {reason}\n")
+                    self.stdout.flush()
 
-        Raises:
-            ValueError: If validation fails
-        """
-        # Check if at least one identifier is present for each row
-        identifiers = ['user_id', 'username', 'email']
-        present_identifiers = [col for col in identifiers if col in df.columns]
+                    # Calculate final valid mask
+                    valid_mask = pd.Series(True, index=df.index)
+                    for _, (is_valid, _) in validation_results.items():
+                        valid_mask &= is_valid
+
+                    # Print invalid records summary
+                    invalid_records = df[~valid_mask]
+                    if not invalid_records.empty:
+                        self.stdout.write(f"\nInvalid Records Summary:\n")
+                        self.stdout.write(f"Total invalid records: {len(invalid_records)}\n")
+                        self.stdout.write("\nColumn-wise null counts:\n")
+                        for col in invalid_records.columns:
+                            null_count = invalid_records[col].isna().sum()
+                            self.stdout.write(f"{col}: {null_count} null values\n")
+                        self.stdout.write("\nFirst 5 invalid records:\n")
+                        self.stdout.write(invalid_records.head().to_string())
+                        self.stdout.write("\n")
+                    self.stdout.flush()
+
+                # Store results
+                valid_records = df[valid_mask]
+                invalid_records = df[~valid_mask]
+                
+                if len(valid_records) > 0:
+                    valid_data[tab_name] = valid_records
+                if len(invalid_records) > 0:
+                    invalid_data[tab_name] = invalid_records
+
+            except Exception as e:
+                self.stdout.write(f"Error validating {tab_name}: {str(e)}\n")
+                self.stdout.flush()
+                raise
+
+        return valid_data, invalid_data
+
+    def _validate_users(self, df: pd.DataFrame) -> Dict:
+        """Validate users tab with detailed output."""
+        results = {}
         
-        if not present_identifiers:
-            raise ValueError(
-                "Users tab must contain at least one identifier column "
-                "(user_id, username, or email)"
-            )
+        # Identifier validation
+        has_identifier = (
+            df['user_id'].notna() |
+            df['username'].notna() |
+            df['email'].notna()
+        )
+        missing_identifier_count = (~has_identifier).sum()
+        results['identifier'] = (has_identifier, [
+            f"Missing identifier (user_id/username/email) for {missing_identifier_count} records"
+        ] if missing_identifier_count > 0 else [])
+
+        # Name validation
+        has_full_name = df['full_name'].notna()
+        has_first_last = df['first_name'].notna() & df['last_name'].notna()
+        valid_names = has_full_name | has_first_last
+        missing_names_count = (~valid_names).sum()
+        results['names'] = (valid_names, [
+            f"Missing name fields (full_name or first_name+last_name) for {missing_names_count} records"
+        ] if missing_names_count > 0 else [])
+
+        # Active status validation
+        valid_active = pd.Series(True, index=df.index)
+        active_reasons = []
+        if 'is_active' in df.columns:
+            non_null_active = df['is_active'].notna()
+            if non_null_active.any():
+                valid_values = df.loc[non_null_active, 'is_active'].isin(['Yes', 'No'])
+                if not valid_values.all():
+                    invalid_values = df.loc[non_null_active & ~valid_values, 'is_active'].unique()
+                    active_reasons.append(f"Invalid is_active values found: {invalid_values.tolist()}")
+                    valid_active.loc[non_null_active] &= valid_values
+        results['active_status'] = (valid_active, active_reasons)
+
+        return results
+
+    def _validate_groups(self, df: pd.DataFrame) -> pd.Series:
+        """Validate Groups tab according to schema rules."""
+        invalid_mask = pd.Series(False, index=df.index)
         
-        # Check if each row has at least one identifier
-        has_identifier = df[present_identifiers].notna().any(axis=1)
-        missing_ids = df[~has_identifier].index.tolist()
+        # Check that at least group_id or group_name is present
+        id_columns = ['group_id', 'group_name']
+        available_ids = [col for col in id_columns if col in df.columns]
+        if available_ids:
+            identifiers_mask = df[available_ids].isna().all(axis=1)
+            invalid_mask |= identifiers_mask
         
-        if missing_ids:
-            raise ValueError(
-                f"Users at indices {missing_ids} are missing all identifiers "
-                f"({', '.join(present_identifiers)})"
-            )
+        return invalid_mask
 
-    def _validate_relationship_tab(
-        self,
-        df: pd.DataFrame,
-        tab_name: str
-    ) -> None:
-        """Validate relationship tab rules.
-
-        Args:
-            df: DataFrame containing relationship data
-            tab_name: Name of the relationship tab
-
-        Raises:
-            ValueError: If validation fails
-        """
-        required_columns = self._get_required_columns(tab_name)
-        missing_columns = [col for col in required_columns if col not in df.columns]
+    def _validate_roles(self, df: pd.DataFrame) -> pd.Series:
+        """Validate Roles tab according to schema rules."""
+        invalid_mask = pd.Series(False, index=df.index)
         
-        if missing_columns:
-            raise ValueError(
-                f"{tab_name} is missing required columns: {missing_columns}"
-            )
+        # Check that at least role_id or role_name is present
+        id_columns = ['role_id', 'role_name']
+        available_ids = [col for col in id_columns if col in df.columns]
+        if available_ids:
+            identifiers_mask = df[available_ids].isna().all(axis=1)
+            invalid_mask |= identifiers_mask
         
-        # Check for null values in required columns
-        for col in required_columns:
-            null_indices = df[df[col].isna()].index.tolist()
-            if null_indices:
-                raise ValueError(
-                    f"{tab_name} has null values in {col} at indices: {null_indices}"
-                )
+        return invalid_mask
 
-    def _get_required_columns(self, tab_name: str) -> List[str]:
-        """Get required columns for a relationship tab.
+    def _validate_resources(self, df: pd.DataFrame) -> pd.Series:
+        """Validate Resources tab according to schema rules."""
+        invalid_mask = pd.Series(False, index=df.index)
+        
+        # Check that at least resource_id or resource_name is present
+        id_columns = ['resource_id', 'resource_name']
+        available_ids = [col for col in id_columns if col in df.columns]
+        if available_ids:
+            identifiers_mask = df[available_ids].isna().all(axis=1)
+            invalid_mask |= identifiers_mask
+        
+        return invalid_mask
 
-        Args:
-            tab_name: Name of the relationship tab
+    def _validate_relationship_tab(self, df: pd.DataFrame, tab_name: str) -> pd.Series:
+        """Validate relationship tabs according to schema rules."""
+        invalid_mask = pd.Series(False, index=df.index)
+        
+        # Only validate fields that are present in the DataFrame
+        if tab_name in self.schema:
+            schema_fields = self.schema[tab_name].keys()
+            available_fields = [field for field in schema_fields if field in df.columns]
+            for field in available_fields:
+                invalid_mask |= df[field].isna()
+        
+        return invalid_mask
 
-        Returns:
-            List[str]: List of required column names
-        """
-        required_columns = {
-            "User Groups": ['user_id', 'group_id'],
-            "User Roles": ['user_id', 'role_id'],
-            "Group Roles": ['group_id', 'role_id'],
-            "User Resources": ['user_id', 'resource_id'],
-            "Role Resources": ['role_id', 'resource_id'],
-            "Group Groups": ['parent_group_id', 'child_group_id']
-        }
-        return required_columns.get(tab_name, [])
+    def _is_valid_iso_datetime(self, dt_str: str) -> bool:
+        """Check if string is valid ISO 8601 datetime."""
+        if not isinstance(dt_str, str):
+            return False
+        try:
+            datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%SZ")
+            return True
+        except ValueError:
+            return False

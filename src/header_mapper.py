@@ -152,14 +152,10 @@ class HeaderMapper:
         # Get schema rules for this tab
         tab_schema = self.schema.get(tab_name, {})
         
-        # Separate mandatory and optional fields
+        # Get mandatory fields
         mandatory_fields = {
             field: details for field, details in tab_schema.items() 
             if details.get('mandatory', False)
-        }
-        optional_fields = {
-            field: details for field, details in tab_schema.items() 
-            if not details.get('mandatory', False)
         }
         
         # Show start over option
@@ -197,7 +193,7 @@ class HeaderMapper:
             else:
                 print("Please enter 1 or 2")
 
-        # First pass: Handle mandatory fields
+        # Handle mandatory fields
         print("\n=== MANDATORY FIELDS ===")
         unmapped_mandatory = set(mandatory_fields.keys()) - used_targets
         
@@ -308,52 +304,7 @@ class HeaderMapper:
             if not input("Continue anyway? (y/n): ").lower().startswith('y'):
                 return self.review_mappings(mappings, input_headers, tab_name, preview_data)
         
-        # Second pass: Handle optional fields
-        print("\n=== OPTIONAL FIELDS ===")
-        for header in input_headers:
-            if mappings[header] is not None:
-                continue
-            
-            mapping_key = f"{tab_name}:{header}"
-            preview = preview_data[header].head(3).tolist()
-            
-            # Get matches from optional fields only
-            matches = [(field, self.calculate_match_score(header, field))
-                      for field in optional_fields if field not in used_targets]
-            matches.sort(key=lambda x: x[1], reverse=True)
-            
-            if matches:
-                self.print_separator('-')
-                print(f"\nField: {header}")
-                print(f"Sample values: {preview}")
-                print("\nPossible optional field matches:")
-                for idx, (match, score) in enumerate(matches, 1):
-                    print(f"{idx}) {match} ({score}%)")
-                print("s) Skip this field")
-                
-                while True:
-                    choice = input(f"Map '{header}' to which optional field? (1-{len(matches)}, s to skip): ").lower()
-                    if choice == 's':
-                        mappings[header] = None
-                        self.saved_mappings[mapping_key] = None
-                        print(f"Skipped optional field: '{header}'")
-                        break
-                    try:
-                        idx = int(choice)
-                        if 1 <= idx <= len(matches):
-                            selected_field = matches[idx-1][0]
-                            if selected_field not in used_targets:
-                                mappings[header] = selected_field
-                                self.saved_mappings[mapping_key] = selected_field
-                                used_targets.add(selected_field)
-                                print(f"✓ Mapped optional field: '{header}' → '{selected_field}'")
-                                break
-                            else:
-                                print(f"'{selected_field}' is already mapped to another column")
-                    except ValueError:
-                        print(f"Please enter a number between 1 and {len(matches)} or 's' to skip")
-    
-        # Save and return
+        # Save and return only the valid mappings
         self.save_mappings(self.saved_mappings)
         return {k: v for k, v in mappings.items() if v is not None}
 

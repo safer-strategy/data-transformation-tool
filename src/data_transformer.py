@@ -1,301 +1,264 @@
 import pandas as pd
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 from datetime import datetime
 import json
+import hashlib
 
 logger = logging.getLogger(__name__)
 
 class DataTransformer:
-    def __init__(self, schema_path: str = 'schema.json'):
-        self.group_id_map = {}
-        self.next_group_id = 1
-        
-        # Load schema to know mandatory screens and columns
-        with open(schema_path, 'r') as f:
+    def __init__(self, schema_path: str):
+        with open(schema_path) as f:
             self.schema = json.load(f)
-        
-        # Define mandatory screens
-        self.mandatory_screens = [
-            "Users", "Groups", "Roles", "Resources",
-            "User Groups", "User Roles", "Group Roles",
-            "User Resources", "Role Resources"
-        ]
+        self.group_id_map = {}
+        self.logger = logging.getLogger(__name__)
 
-    def transform_data(self, input_data: Dict[str, pd.DataFrame], mappings: Dict[str, Dict[str, str]]) -> Dict[str, pd.DataFrame]:
-        """Transform input data and ensure all mandatory screens and columns exist."""
-        transformed = {}
+    def transform_data(self, data: Dict[str, pd.DataFrame], mappings: Dict[str, Dict]) -> Dict[str, pd.DataFrame]:
+        """Transform all data according to schema rules."""
+        result = {}
         
-        try:
-            # First, ensure all mandatory screens exist
-            for screen in self.mandatory_screens:
-                if screen not in input_data:
-                    logger.info(f"Creating missing mandatory screen: {screen}")
-                    input_data[screen] = pd.DataFrame()
+        # Process tabs in specific order
+        processing_order = ['Users', 'Groups', 'Roles', 'Resources', 'User Groups', 'User Roles', 
+                           'Group Roles', 'User Resources', 'Role Resources', 'Group Resources']
+        
+        for tab_name in processing_order:
+            if tab_name not in data:
+                continue
             
-            # Process Groups tab first
-            if 'Groups' in input_data:
-                transformed['Groups'] = self._transform_groups_tab(
-                    input_data['Groups'],
-                    mappings.get('Groups', {})
-                )
+            df = data[tab_name]
+            tab_mapping = mappings.get(tab_name, {})
             
-            # Process remaining tabs
-            for tab_name, df in input_data.items():
-                if tab_name == 'Groups':
-                    continue  # Already processed
-                
-                logger.info(f"Processing tab: {tab_name}")
-                
-                if tab_name == "Users":
-                    transformed[tab_name] = self._transform_users_tab(
-                        df,
-                        mappings.get(tab_name, {})
-                    )
+            # Add these debug lines
+            self.logger.debug(f"Processing {tab_name}")
+            self.logger.debug(f"Input DataFrame shape: {df.shape}")
+            self.logger.debug(f"Input columns: {df.columns.tolist()}")
+            
+            try:
+                if tab_name == 'Users':
+                    result[tab_name] = self._transform_users_tab(df, tab_mapping)
+                elif tab_name == 'Groups':
+                    result[tab_name] = self._transform_groups_tab(df, tab_mapping)
+                elif tab_name == 'User Groups':
+                    result[tab_name] = self._transform_user_groups_tab(df, tab_mapping)
                 else:
-                    transformed[tab_name] = self._transform_generic_tab(
-                        df,
-                        tab_name,
-                        mappings.get(tab_name, {})
-                    )
+                    result[tab_name] = self._transform_tab(df, tab_name, tab_mapping)
+                
+                # Add these debug lines
+                self.logger.debug(f"Output DataFrame shape: {result[tab_name].shape}")
+                self.logger.debug(f"Output columns: {result[tab_name].columns.tolist()}")
+                self.logger.info(f"Successfully transformed {tab_name} tab")
             
-            # Ensure all mandatory screens exist in transformed data
-            for screen in self.mandatory_screens:
-                if screen not in transformed:
-                    logger.info(f"Creating missing mandatory screen in output: {screen}")
-                    transformed[screen] = self._create_empty_tab(screen)
-            
-            return transformed
-            
-        except Exception as e:
-            logger.error(f"Error in transform_data: {str(e)}")
-            logger.error("Current state of transformed data:")
-            for tab_name, df in transformed.items():
-                logger.error(f"{tab_name} shape: {df.shape}")
-                logger.error(f"{tab_name} columns: {df.columns.tolist()}")
-            raise
-
-    def _create_empty_tab(self, tab_name: str) -> pd.DataFrame:
-        """Create an empty DataFrame with required columns for a given tab."""
-        if tab_name not in self.schema:
-            logger.warning(f"No schema found for tab: {tab_name}")
-            return pd.DataFrame()
+            except Exception as e:
+                self.logger.error(f"Error transforming {tab_name} tab: {str(e)}")
+                raise
         
-        # Get all columns from schema
-        columns = list(self.schema[tab_name].keys())
-        return pd.DataFrame(columns=columns)
+        return result
 
-    def _transform_generic_tab(self, df: pd.DataFrame, tab_name: str, mapping: Dict[str, str]) -> pd.DataFrame:
-        """Transform any tab ensuring all required columns exist."""
+    def _transform_user_groups_tab(self, df: pd.DataFrame, mapping: Dict[str, str]) -> pd.DataFrame:
+        """Transform User Groups tab with automatic ID resolution."""
+        self.logger.info("Starting User Groups transformation")
+        self.logger.info(f"Initial columns: {df.columns.tolist()}")
+        
+        # First apply the column mapping
+        result_df = df.rename(columns=mapping)
+        self.logger.info(f"Columns after mapping: {result_df.columns.tolist()}")
+        
+        # Handle group_id conversion
+        if 'group_id' in result_df.columns:
+            original_group_ids = result_df['group_id'].copy()
+            # Convert group names to IDs using the mapping
+            result_df['group_id'] = result_df['group_id'].apply(
+                lambda x: self.group_id_map.get(str(x).strip(), x) if pd.notna(x) else None
+            )
+            # Log the conversions
+            for orig, new in zip(original_group_ids, result_df['group_id']):
+                self.logger.info(f"Group conversion: {orig} -> {new}")
+        
+        # Ensure required columns exist
+        required_columns = ['user_id', 'group_id']
+        for col in required_columns:
+            if col not in result_df.columns:
+                result_df[col] = None
+        
+        # Reorder columns
+        result_df = result_df[required_columns]
+        
+        return result_df
+
+    def _transform_groups_tab(self, df: pd.DataFrame, mapping: Dict[str, str]) -> pd.DataFrame:
+        """Transform Groups tab and establish group ID mappings."""
         try:
-            # Start with empty DataFrame if input is empty
-            if df.empty:
-                return self._create_empty_tab(tab_name)
+            self.logger.info("Starting Groups transformation")
+            self.logger.info(f"Initial columns: {df.columns.tolist()}")
+            self.logger.info(f"Mapping being applied: {mapping}")
             
             # Apply column mapping
-            mapped_df = df.rename(columns=mapping)
+            result_df = df.rename(columns=mapping)
+            self.logger.info(f"Columns after mapping: {result_df.columns.tolist()}")
             
-            # Ensure all required columns exist
-            if tab_name in self.schema:
-                for column in self.schema[tab_name].keys():
-                    if column not in mapped_df.columns:
-                        mapped_df[column] = None
-                        logger.debug(f"Added missing column {column} to {tab_name}")
+            # Handle the special case of __generated_group_id__
+            if '__generated_group_id__' in mapping:
+                if 'group_name' not in result_df.columns:
+                    raise ValueError("Cannot generate group_id: group_name column not found")
+                    
+                # Generate group IDs for rows where group_name exists
+                result_df['group_id'] = result_df['group_name'].apply(self._get_or_create_group_id)
                 
-                # Reorder columns according to schema
-                mapped_df = mapped_df.reindex(columns=list(self.schema[tab_name].keys()))
+                # Log the generated IDs
+                self.logger.info("Generated group IDs:")
+                for name, gid in zip(result_df['group_name'], result_df['group_id']):
+                    self.logger.info(f"  {name} -> {gid}")
             
-            return mapped_df
+            # Ensure required columns exist
+            required_columns = ['group_id', 'group_name']
+            for col in required_columns:
+                if col not in result_df.columns:
+                    result_df[col] = None
+            
+            # Build group_id_map from valid rows
+            valid_mask = result_df['group_name'].notna() & result_df['group_id'].notna()
+            valid_rows = result_df[valid_mask]
+            
+            # Update the group_id_map
+            new_mappings = dict(zip(
+                valid_rows['group_name'].astype(str).str.strip(),
+                valid_rows['group_id']
+            ))
+            self.group_id_map.update(new_mappings)
+            
+            self.logger.info(f"Updated group_id_map: {self.group_id_map}")
+            
+            # Return only the required columns in the correct order
+            return result_df[required_columns]
             
         except Exception as e:
-            logger.error(f"Error in _transform_generic_tab for {tab_name}: {str(e)}")
-            logger.error(f"Input columns: {df.columns.tolist()}")
-            logger.error(f"Mapping: {mapping}")
+            self.logger.error(f"Error in _transform_groups_tab: {str(e)}")
+            self.logger.error(f"Input columns: {df.columns.tolist()}")
+            self.logger.error(f"Mapping: {mapping}")
             raise
+
+    def _transform_tab(self, df: pd.DataFrame, tab_name: str, mapping: Dict[str, str]) -> pd.DataFrame:
+        """Transform a generic tab according to schema rules."""
+        self.logger.info(f"Starting transformation for tab: {tab_name}")
+        self.logger.info(f"Initial columns: {df.columns.tolist()}")
+        
+        # Verify mapping is a dictionary
+        if not isinstance(mapping, dict):
+            self.logger.error(f"Invalid mapping type: {type(mapping)}. Expected dict.")
+            raise TypeError(f"Mapping must be a dictionary, got {type(mapping)}")
+        
+        # Apply column mapping
+        result_df = df.rename(columns=mapping)
+        self.logger.info(f"Columns after mapping: {result_df.columns.tolist()}")
+        
+        return result_df
 
     def _transform_users_tab(self, df: pd.DataFrame, mapping: Dict[str, str]) -> pd.DataFrame:
-        """Transform Users tab ensuring all required columns exist."""
+        """Transform Users tab with strict schema rule compliance."""
+        self.logger.info(f"Starting Users transformation with columns: {df.columns.tolist()}")
+        self.logger.info(f"Mapping being applied: {mapping}")
+        
         try:
-            # Handle duplicate mappings by prioritizing required fields
-            reverse_mapping = {}
-            duplicate_targets = {}
+            # Create a copy of the input DataFrame
+            final_df = df.copy()
             
-            # First pass: identify duplicates
-            for source, target in mapping.items():
-                if target in reverse_mapping:
-                    if target not in duplicate_targets:
-                        duplicate_targets[target] = [(reverse_mapping[target], source)]
-                    else:
-                        duplicate_targets[target].append((reverse_mapping[target], source))
-                else:
-                    reverse_mapping[target] = source
+            # Apply column mapping while preserving original data
+            final_df = final_df.rename(columns=mapping)
             
-            # Resolve duplicates by checking schema requirements
-            for target, sources in duplicate_targets.items():
-                if target in self.schema.get("Users", {}):
-                    is_required = self.schema["Users"][target].get("mandatory", False)
-                    if is_required:
-                        # Find the source with non-null values
-                        non_null_sources = [
-                            source for source_pair in sources 
-                            for source in source_pair 
-                            if df[source].notna().any()
-                        ]
-                        if non_null_sources:
-                            # Keep the first non-null source
-                            reverse_mapping[target] = non_null_sources[0]
-                            logger.info(f"Keeping required field '{target}' mapped from '{non_null_sources[0]}' (has data)")
-                        else:
-                            # Keep the first source if no non-null values found
-                            reverse_mapping[target] = sources[0][0]
-                            logger.info(f"Keeping required field '{target}' mapped from '{sources[0][0]}' (all null)")
-                    else:
-                        # For non-required fields, keep the first non-null source or drop if all null
-                        non_null_sources = [
-                            source for source_pair in sources 
-                            for source in source_pair 
-                            if df[source].notna().any()
-                        ]
-                        if non_null_sources:
-                            reverse_mapping[target] = non_null_sources[0]
-                            logger.info(f"Keeping optional field '{target}' mapped from '{non_null_sources[0]}' (has data)")
-                        else:
-                            # Remove mapping if all sources are null
-                            reverse_mapping.pop(target, None)
-                            logger.info(f"Dropping optional field '{target}' as all sources are null")
+            # Initialize required columns if they don't exist
+            required_columns = [
+                'user_id', 'username', 'email', 'first_name', 'last_name', 
+                'full_name', 'is_active', 'created_at', 'updated_at', 'last_login_at'
+            ]
             
-            # Create a new DataFrame with correct columns
-            result_df = pd.DataFrame()
-            
-            # Map columns using the resolved reverse mapping
-            for target_col, source_col in reverse_mapping.items():
-                if source_col in df.columns:
-                    result_df[target_col] = df[source_col]
-            
-            # Ensure all required columns exist
-            required_columns = list(self.schema["Users"].keys())
             for col in required_columns:
-                if col not in result_df.columns:
-                    result_df[col] = None
-                    logger.debug(f"Added missing column {col} to Users tab")
+                if col not in final_df.columns:
+                    final_df[col] = None
+
+            # Ensure username and email are properly copied from input
+            if 'username' in mapping.values():
+                orig_username_col = [k for k, v in mapping.items() if v == 'username'][0]
+                final_df['username'] = df[orig_username_col]
             
-            # Handle datetime fields
-            date_columns = ['created_at', 'updated_at', 'last_login_at']
-            for col in date_columns:
-                if col in result_df.columns:
-                    result_df[col] = pd.to_datetime(result_df[col], errors='coerce')
-                    result_df[col] = result_df[col].dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+            if 'email' in mapping.values():
+                orig_email_col = [k for k, v in mapping.items() if v == 'email'][0]
+                final_df['email'] = df[orig_email_col]
+
+            # Handle user_id according to schema rules
+            missing_user_id_mask = final_df['user_id'].isna()
+            if missing_user_id_mask.any():
+                # If username exists but user_id is missing, copy username to user_id
+                username_mask = missing_user_id_mask & final_df['username'].notna()
+                final_df.loc[username_mask, 'user_id'] = final_df.loc[username_mask, 'username']
+                
+                # For remaining missing user_ids, try email
+                still_missing_mask = final_df['user_id'].isna()
+                email_mask = still_missing_mask & final_df['email'].notna()
+                final_df.loc[email_mask, 'user_id'] = final_df.loc[email_mask, 'email']
+
+            # Convert boolean is_active to Yes/No
+            if 'is_active' in final_df.columns:
+                final_df['is_active'] = final_df['is_active'].map({True: 'Yes', False: 'No'})
+                final_df['is_active'] = final_df['is_active'].fillna('No')
+
+            # Format datetime fields
+            datetime_fields = ['created_at', 'updated_at', 'last_login_at']
+            for field in datetime_fields:
+                if field in final_df.columns and not final_df[field].isna().all():
+                    final_df[field] = pd.to_datetime(final_df[field]).dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+            # Extract name from email if no name fields exist
+            missing_names_mask = (
+                final_df['full_name'].isna() & 
+                (final_df['first_name'].isna() | final_df['last_name'].isna())
+            )
             
-            # Handle boolean fields
-            bool_columns = ['is_active']
-            for col in bool_columns:
-                if col in result_df.columns:
-                    result_df[col] = result_df[col].map({'Yes': True, 'No': False})
-            
-            return result_df.reindex(columns=required_columns)
-            
+            if missing_names_mask.any():
+                email_names = final_df.loc[missing_names_mask, 'email'].apply(
+                    lambda x: ' '.join(x.split('@')[0].split('_')) if pd.notna(x) else None
+                )
+                final_df.loc[missing_names_mask, 'full_name'] = email_names
+
+            # Log the state of username field
+            self.logger.info(f"Username null count before return: {final_df['username'].isna().sum()}")
+            self.logger.info(f"First few usernames: {final_df['username'].head()}")
+
+            return final_df[required_columns]
+
         except Exception as e:
-            logger.error(f"Error in _transform_users_tab: {str(e)}")
-            logger.error(f"Available columns: {df.columns.tolist()}")
-            logger.error(f"Mapping: {mapping}")
+            self.logger.error(f"Error in Users transformation: {str(e)}")
+            self.logger.error(f"Current columns: {final_df.columns.tolist() if 'final_df' in locals() else 'N/A'}")
             raise
 
-    def _transform_groups_tab(
-        self,
-        df: pd.DataFrame,
-        mapping: Dict[str, str]
-    ) -> pd.DataFrame:
-        """Transform Groups tab ensuring all required columns exist.
+    def _transform_roles_tab(self, df: pd.DataFrame, required_columns: List[str]) -> pd.DataFrame:
+        """Transform Roles tab ensuring all required columns exist."""
+        # If permissions is a column and contains non-null values, ensure it's a string
+        if 'permissions' in df.columns:
+            df['permissions'] = df['permissions'].apply(
+                lambda x: str(x) if pd.notna(x) else None
+            )
+        return df
 
-        Args:
-            df: Input DataFrame containing groups data
-            mapping: Dictionary mapping source columns to target columns
-
-        Returns:
-            pd.DataFrame: Transformed groups DataFrame with required columns
-
-        Raises:
-            ValueError: If group_name column is missing when needed for group_id generation
-        """
-        try:
-            # If input is empty, return empty DataFrame with required columns
-            if df.empty:
-                return self._create_empty_tab("Groups")
-            
-            # Apply column mapping
-            mapped_df = df.rename(columns=mapping)
-            result_df = pd.DataFrame()
-            
-            # Handle auto-generation of group_id if needed
-            if "__generated_group_id__" in mapping:
-                if 'group_name' in mapped_df.columns:
-                    result_df['group_name'] = mapped_df['group_name']
-                    result_df['group_id'] = mapped_df.apply(
-                        lambda row: self._get_or_create_group_id(row['group_name']),
-                        axis=1
-                    )
-                else:
-                    logger.error("Cannot generate group_id: group_name column not found")
-                    raise ValueError(
-                        "group_name column is required for group_id generation"
-                    )
-            else:
-                # Copy all mapped columns
-                for col in mapped_df.columns:
-                    result_df[col] = mapped_df[col]
-            
-            # Ensure all required columns exist
-            required_columns = list(self.schema["Groups"].keys())
-            for col in required_columns:
-                if col not in result_df.columns:
-                    result_df[col] = None
-            
-            # Reorder columns according to schema
-            return result_df.reindex(columns=required_columns)
-            
-        except Exception as e:
-            logger.error(f"Error in _transform_groups_tab: {str(e)}")
-            logger.error(f"Input columns: {df.columns.tolist()}")
-            logger.error(f"Mapping: {mapping}")
-            raise
+    def _transform_resources_tab(self, df: pd.DataFrame, required_columns: List[str]) -> pd.DataFrame:
+        """Transform Resources tab ensuring all required columns exist."""
+        return df
 
     def _get_or_create_group_id(self, group_name: str) -> str:
-        """Get existing group ID or create new one."""
+        """Generate or retrieve a group ID for a given group name."""
         if pd.isna(group_name):
             return None
-        
+            
         group_name = str(group_name).strip()
-        if group_name not in self.group_id_map:
-            self.group_id_map[group_name] = f"G{self.next_group_id:06d}"
-            self.next_group_id += 1
-        return self.group_id_map[group_name]
-
-    def _transform_user_groups_tab(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Transform User Groups tab using the generated group IDs."""
-        result_df = df.copy()
+        if group_name in self.group_id_map:
+            return self.group_id_map[group_name]
+            
+        # Generate a new ID using a hash function
+        hash_object = hashlib.md5(group_name.encode())
+        new_id = hash_object.hexdigest()[:8]  # Use first 8 characters of MD5 hash
         
-        # Log available columns
-        logger.debug(f"User Groups columns before transform: {result_df.columns.tolist()}")
-        
-        # Check for required columns
-        if 'group_id' not in result_df.columns:
-            logger.warning("group_id column missing in User Groups tab")
-            # Add empty group_id column if missing
-            result_df['group_id'] = pd.NA
-        
-        if 'user_id' not in result_df.columns:
-            logger.warning("user_id column missing in User Groups tab")
-            # Add empty user_id column if missing
-            result_df['user_id'] = pd.NA
-        
-        # Apply transformations only on non-null values
-        if 'group_id' in result_df.columns:
-            result_df['group_id'] = result_df['group_id'].apply(
-                lambda x: self.group_id_map.get(str(x).strip(), x) if pd.notna(x) else pd.NA
-            )
-        
-        logger.debug(f"User Groups columns after transform: {result_df.columns.tolist()}")
-        return result_df
+        self.group_id_map[group_name] = new_id
+        return new_id
 
     def resolve_relationships(self, entity_data: Dict[str, pd.DataFrame], relationship_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
         """Resolve relationships between entities using lookups.
@@ -369,47 +332,112 @@ class DataTransformer:
 
     def _transform_users_tab(self, df: pd.DataFrame, mapping: Dict[str, str]) -> pd.DataFrame:
         """Transform Users tab with strict schema rule compliance."""
+        self.logger.info(f"Starting Users transformation with columns: {df.columns.tolist()}")
+        self.logger.info(f"Mapping being applied: {mapping}")
+        
         try:
-            # First apply the column mapping
-            result_df = df.rename(columns=mapping)
+            # Create a new DataFrame with mapped columns
+            final_df = df.rename(columns=mapping).copy()
             
-            # Create missing columns if they don't exist
-            required_columns = ['user_id', 'username', 'email', 'first_name', 'last_name', 'is_active']
+            # Log the columns after mapping
+            self.logger.info(f"Columns after mapping: {final_df.columns.tolist()}")
+            
+            # Initialize all required columns first
+            required_columns = [
+                'user_id', 'username', 'email', 'first_name', 'last_name', 
+                'full_name', 'is_active', 'created_at', 'updated_at', 'last_login_at'
+            ]
+            
+            # Create missing columns
             for col in required_columns:
-                if col not in result_df.columns:
-                    result_df[col] = None
-                    logger.debug(f"Created missing column: {col}")
+                if col not in final_df.columns:
+                    final_df[col] = None
 
-            # Ensure at least one identifier is present
-            has_identifier = result_df[['user_id', 'username', 'email']].notna().any(axis=1)
-            if not has_identifier.all():
-                missing_ids = result_df[~has_identifier].index
-                logger.error(f"Records missing required identifiers at indices: {missing_ids.tolist()}")
-                raise ValueError("Each user record must have at least one identifier")
+            # Copy email to username when username is empty
+            username_mask = final_df['username'].isna() & final_df['email'].notna()
+            final_df.loc[username_mask, 'username'] = final_df.loc[username_mask, 'email']
 
-            # Handle datetime fields
-            date_columns = ['created_at', 'updated_at', 'last_login_at']
-            for col in date_columns:
-                if col in result_df.columns:
-                    result_df[col] = pd.to_datetime(result_df[col], errors='coerce')
-                    result_df[col] = result_df[col].dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+            # Extract names from email when first_name and last_name are empty
+            email_mask = (
+                final_df['email'].notna() & 
+                final_df['first_name'].isna() & 
+                final_df['last_name'].isna()
+            )
+            
+            def extract_name_from_email(email):
+                if not isinstance(email, str) or '@' not in email:
+                    return None, None
+                
+                name_part = email.split('@')[0]
+                # Handle different email formats
+                if '_' in name_part:
+                    parts = name_part.split('_')
+                elif '.' in name_part:
+                    parts = name_part.split('.')
+                else:
+                    return name_part, None
+                
+                if len(parts) >= 2:
+                    # Properly capitalize names
+                    first = parts[0].capitalize()
+                    last = parts[1].capitalize()
+                    return first, last
+                return parts[0].capitalize(), None
 
-            # Handle is_active field
-            if 'is_active' in result_df.columns:
-                result_df['is_active'] = result_df['is_active'].map({
-                    True: 'Yes', False: 'No',
-                    'True': 'Yes', 'False': 'No',
-                    'YES': 'Yes', 'NO': 'No',
-                    'Y': 'Yes', 'N': 'No',
-                    1: 'Yes', 0: 'No'
-                }).fillna('No')
+            # Extract and set first_name and last_name from email only if they're empty
+            for idx in final_df[email_mask].index:
+                first, last = extract_name_from_email(final_df.loc[idx, 'email'])
+                if final_df.loc[idx, 'first_name'] is None:
+                    final_df.loc[idx, 'first_name'] = first
+                if final_df.loc[idx, 'last_name'] is None:
+                    final_df.loc[idx, 'last_name'] = last
 
-            return result_df
+            # Clean up name fields
+            for field in ['first_name', 'last_name']:
+                if field in final_df.columns:
+                    final_df[field] = final_df[field].apply(
+                        lambda x: x.replace('_', ' ').strip() if isinstance(x, str) else x
+                    )
+
+            # Generate full_name from first_name and last_name
+            name_mask = final_df['first_name'].notna()
+            final_df.loc[name_mask, 'full_name'] = final_df.loc[name_mask].apply(
+                lambda row: ' '.join(filter(None, [row['first_name'], row['last_name']])), 
+                axis=1
+            )
+
+            # Handle user_id according to schema rules
+            missing_user_id_mask = final_df['user_id'].isna()
+            if missing_user_id_mask.any():
+                username_mask = missing_user_id_mask & final_df['username'].notna()
+                final_df.loc[username_mask, 'user_id'] = final_df.loc[username_mask, 'username']
+                
+                still_missing_mask = final_df['user_id'].isna()
+                email_mask = still_missing_mask & final_df['email'].notna()
+                final_df.loc[email_mask, 'user_id'] = final_df.loc[email_mask, 'email']
+
+            # Convert boolean is_active to Yes/No
+            if 'is_active' in final_df.columns:
+                final_df['is_active'] = final_df['is_active'].map({True: 'Yes', False: 'No'})
+                final_df['is_active'] = final_df['is_active'].fillna('No')
+
+            # Format datetime fields
+            datetime_fields = ['created_at', 'updated_at', 'last_login_at']
+            for field in datetime_fields:
+                if field in final_df.columns and not final_df[field].isna().all():
+                    final_df[field] = pd.to_datetime(final_df[field]).dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+            # Log the state of the name fields
+            self.logger.info(f"Name fields null counts:")
+            self.logger.info(f"  first_name: {final_df['first_name'].isna().sum()}")
+            self.logger.info(f"  last_name: {final_df['last_name'].isna().sum()}")
+            self.logger.info(f"  full_name: {final_df['full_name'].isna().sum()}")
+            
+            return final_df[required_columns]
 
         except Exception as e:
-            logger.error(f"Error in _transform_users_tab: {str(e)}")
-            logger.error(f"Available columns: {df.columns.tolist()}")
-            logger.error(f"Mapping: {mapping}")
+            self.logger.error(f"Error in Users transformation: {str(e)}")
+            self.logger.error(f"Current columns: {final_df.columns.tolist() if 'final_df' in locals() else 'N/A'}")
             raise
 
     def _create_entity_lookups(self, entity_data: Dict[str, pd.DataFrame]) -> Dict[str, Dict[str, Dict[str, Any]]]:

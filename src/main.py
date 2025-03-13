@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import json
 from pathlib import Path
 from reader import Reader
 from header_mapper import HeaderMapper
@@ -8,11 +9,19 @@ from data_transformer import DataTransformer
 from validator import Validator
 from output_generator import OutputGenerator
 
-# Configure logging
+# Configure logging to output to both file and console
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('validation.log')
+    ]
 )
+
+# Force stdout to flush immediately
+sys.stdout.reconfigure(line_buffering=True)
+
 logger = logging.getLogger(__name__)
 
 def get_output_path(input_path: str) -> str:
@@ -52,7 +61,11 @@ def main():
         mapper = HeaderMapper(str(schema_path))
         transformer = DataTransformer(str(schema_path))
         validator = Validator(str(schema_path))
-        generator = OutputGenerator()
+        
+        # Load schema for output generator
+        with open(schema_path) as f:
+            schema = json.load(f)
+        generator = OutputGenerator(schema)
 
         # Read input
         logger.info(f"Reading input from: {input_path}")
@@ -89,13 +102,19 @@ def main():
         transformed_rel = transformer.resolve_relationships(entity_data, rel_data)
         transformed_data.update(transformed_rel)
         
-        # Validate
+        # Validate and separate valid/invalid records
         logger.info("Validating data...")
-        validator.validate_data(transformed_data)
+        valid_data, invalid_data = validator.validate_data(transformed_data)
         
-        # Generate output
+        # Generate output for valid records
         logger.info(f"Generating output file: {output_path}")
-        generator.generate_excel(transformed_data, output_path)
+        generator.generate_excel(valid_data, output_path)
+        
+        # Generate output for invalid records if any exist
+        if any(not df.empty for df in invalid_data.values()):
+            invalid_path = str(Path(output_path).parent / f"invalid_records_{Path(output_path).name}")
+            logger.info(f"Generating invalid records file: {invalid_path}")
+            generator.generate_excel(invalid_data, invalid_path)
         
         logger.info("Processing completed successfully!")
         return 0
