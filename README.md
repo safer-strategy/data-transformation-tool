@@ -1,6 +1,34 @@
 # Data Transformation and Validation Tool
 
-A robust Python-based tool for transforming and validating user access management data from various input formats into a standardized Excel format.
+Custom App integration got you down? This tool is here to help!
+
+## TLDR
+A Python tool that converts messy user access management data into clean, standardized Excel files.
+
+### Quick Start
+```bash
+git clone <your-repo>
+cd data-transformation-tool
+./init.sh
+python src/main.py <input_file_or_directory>
+```
+
+### Key Features
+- Reads Excel/CSV files → Outputs standardized Excel
+- Smart column mapping with fuzzy matching
+- Validates user data (IDs, names, dates, relationships)
+- Separates valid/invalid records
+- Handles: Users, Groups, Roles, Resources, and their relationships
+
+### Input/Output
+- Put files in: `uploads/`
+- Get results in: `converts/`
+  - `converted_[filename].xlsx`: Valid records
+  - `invalid_records_[filename].xlsx`: Invalid records
+  - `validation.log`: Processing details
+
+---
+
 
 ## Overview
 
