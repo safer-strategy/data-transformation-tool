@@ -11,11 +11,13 @@ If you don't have data for one or more entities, you can leave the respective ta
 ### Users:
 
 - Every record in the **Users** tab must include at least one of the following fields: `user_id`, `username`, or `email`.
+- If `username` does not exist, populate it from data in `email`.
+- If `user_id` does not exist, populate it from data in `email`.
 - Either `first_name` + `last_name` **or** `full_name` are mandatory for mapping inputs.
   - `full_name` should be a concatenation of `first_name` and `last_name`. 
   All 3 fields are **required** to be populated in the output.
 - The `is_active` field should have a value of either **Yes** or **No**.
-- The fields `create_at`, `updated_at`, and `last_login_at` must follow a valid datetime format. For example `2023-01-01T12:00:00.00Z`  
+- The fields `created_at`, `updated_at`, and `last_login_at` must follow a valid datetime format. For example `2023-01-01T12:00:00.00Z`  
   - Convert datetime to ISO 8601
     ```python
     from datetime import datetime
@@ -29,18 +31,24 @@ If you don't have data for one or more entities, you can leave the respective ta
 
 ### Groups:
 
-- Every record in the **Groups** tab must include at least one of the following fields: `group_id` or `group_name`.
+- Every record in the **Groups** tab must include at least one of the following fields: `group_id` or `group_name` AND `group_description`.
 - If `group_id` is unpopulated, populate with an incrementing number.
+- If `group_description` is unpopulated, populate from `group_name`.
+- Output columns must be ordered as follows:
+  1. `group_id`
+  2. `group_name`
+  3. `group_description`
 
 ### Roles:
 
 - Every record in the **Roles** tab must include at least one of the following fields: `role_id` or `role_name`.
+- If `role_id` is not provided, use `role_name` as the `role_id`.
 - The `permissions` field should contain values separated by commas.
 
 ### Resources:
 
 - Every record in the **Resources** tab must include at least one of the following fields: `resource_id` or `resource_name`.
-   
+- If `resource_id` is not provided, use `resource_name` as the `resource_id`.
 
 ## Relationship Tabs
 
@@ -55,7 +63,6 @@ If you don't have data for one or more entities, you can leave the respective ta
 - **group_id** population:
     - If `group_id` was provided in the **Groups** tab, use it in the current tab.
     - If `group_id` was not provided, populate with the number associated in the **Groups** tab.
-        
 
 ### User Roles:
 
@@ -65,7 +72,6 @@ If you don't have data for one or more entities, you can leave the respective ta
 - **role_id** population:
     - If `role_id` was provided in the **Roles** tab, use it in the current tab.
     - If `role_id` was not provided, populate `role_name`.
-     
 
 ### Group Roles:
 
@@ -75,7 +81,7 @@ If you don't have data for one or more entities, you can leave the respective ta
     - If `group_id` was not provided, populate with the number associated in the **Groups** tab.
 - **role_id** population:
     - If `role_id` was provided in the **Roles** tab, use it in the current tab.
-    - If `role_id` was not provided, populate `role_name`.   
+    - If `role_id` was not provided, populate `role_name`.
 
 ### User Resources:
 
@@ -84,7 +90,7 @@ If you don't have data for one or more entities, you can leave the respective ta
     - Follow the same rules as described in the **User Groups** section for populating `user_id`.
 - **resource_id** population:
     - If `resource_id` was provided in the **Resources** tab, use it in the current tab.
-    - If `resource_id` was not provided, populate `resource_name`.       
+    - If `resource_id` was not provided, populate `resource_name`.
 
 ### Role Resources:
 
@@ -95,3 +101,9 @@ If you don't have data for one or more entities, you can leave the respective ta
 - **resource_id** population:
     - If `resource_id` was provided in the **Resources** tab, use it in the current tab.
     - If `resource_id` was not provided, populate `resource_name`.
+### Group Groups:
+
+- All fields must be populated in each row.
+- **parent_group_id** and **child_group_id** population:
+    - If `group_id` was provided in the **Groups** tab, use it in the current tab.
+    - If `group_id` was not provided, populate with the number associated in the **Groups** tab.

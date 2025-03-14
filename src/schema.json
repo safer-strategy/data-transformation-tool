@@ -52,15 +52,21 @@
     }
   },
   "Groups": {
-    "group_id": {
-      "type": "string",
-      "synonyms": ["group_id", "gid", "group identifier", "group.id", "group-id", "group_number", "groupnumber", "group key", "group.key", "group_uid"],
-      "mandatory": true
-    },
     "group_name": {
       "type": "string",
-      "synonyms": ["group_name", "name", "groupname", "group.name", "group-name", "group_label", "group label", "team name", "team_name", "group title", "group_title"],
+      "synonyms": ["name", "group_name", "groupname", "group"],
       "mandatory": true
+    },
+    "group_description": {
+      "type": "string",
+      "synonyms": ["description", "desc", "group_desc", "group_description"],
+      "mandatory": true,
+      "derived_from": "group_name"
+    },
+    "group_id": {
+      "type": "string",
+      "synonyms": ["id", "group_id", "groupid"],
+      "mandatory": false
     }
   },
   "Roles": {

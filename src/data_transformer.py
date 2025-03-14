@@ -18,8 +18,10 @@ class DataTransformer:
     def transform_data_tab(self, df: pd.DataFrame, mappings: Dict[str, str], tab_name: str) -> pd.DataFrame:
         """Transform data for a specific tab."""
         if df.empty:
+            if tab_name == "Groups":
+                return pd.DataFrame(columns=['group_id', 'group_name', 'group_description'])
             return pd.DataFrame()
-        
+
         # Create new DataFrame with mapped columns
         transformed = pd.DataFrame()
         
@@ -29,51 +31,45 @@ class DataTransformer:
                 transformed[target] = df[source].copy()
         
         # Special handling for different tabs
-        if tab_name == "Users" and not transformed.empty:
-            # Handle user identification fields
-            if 'user_id' not in transformed.columns or transformed['user_id'].isna().all():
-                if 'username' in transformed.columns and transformed['username'].notna().any():
-                    transformed['user_id'] = transformed['username'].copy()
-                elif 'email' in transformed.columns and transformed['email'].notna().any():
-                    transformed['user_id'] = transformed['email'].copy()
-            
-            # Handle name fields
-            if 'full_name' in transformed.columns and transformed['full_name'].notna().any():
-                # Split full_name into first_name and last_name
-                name_parts = transformed['full_name'].str.split(n=1, expand=True)
-                transformed['first_name'] = name_parts[0]
-                transformed['last_name'] = name_parts[1].fillna('')
-            elif 'first_name' in transformed.columns and 'last_name' in transformed.columns:
-                # Create full_name from first_name and last_name
-                transformed['full_name'] = transformed['first_name'].fillna('') + ' ' + transformed['last_name'].fillna('')
-                transformed['full_name'] = transformed['full_name'].str.strip()
-            
-            # Transform datetime fields to ISO 8601
-            datetime_fields = ['created_at', 'updated_at', 'last_login_at']
-            for field in datetime_fields:
-                if field in transformed.columns:
-                    transformed[field] = transformed[field].apply(self._transform_datetime_to_iso)
-            
-            # Transform is_active field to Yes/No
-            if 'is_active' in transformed.columns:
-                transformed['is_active'] = transformed['is_active'].apply(self._transform_boolean_to_yes_no)
-        
-        elif tab_name == "Groups" and not transformed.empty:
-            # Add incremental group_id
-            transformed['group_id'] = range(1, len(transformed) + 1)
-            
-            # Store mapping for relationship resolution
-            for idx, row in transformed.iterrows():
-                if 'group_name' in transformed.columns and pd.notna(row['group_name']):
-                    self.group_id_map[str(row['group_name'])] = row['group_id']
-        
-        return transformed
+        if tab_name == "Groups":
+            return self._transform_groups(transformed)
+        elif tab_name == "Users":
+            return self._transform_users(transformed)
+        elif tab_name == "Roles":
+            return self._transform_roles(transformed)
+        elif tab_name == "Resources":
+            return self._transform_resources(transformed)
+        else:
+            return self._transform_relationships(transformed, tab_name)
 
     def _transform_users(self, df: pd.DataFrame) -> pd.DataFrame:
         """Transform Users tab data."""
-        # Handle full_name if first_name and last_name are present
+        # Ensure all required columns exist
+        required_cols = ['user_id', 'username', 'email', 'first_name', 'last_name', 'full_name']
+        for col in required_cols:
+            if col not in df.columns:
+                df[col] = None
+
+        # Handle identifiers according to schema rules
+        if df['user_id'].isna().any():
+            # If user_id is missing, try to populate from email or username
+            mask = df['user_id'].isna()
+            df.loc[mask, 'user_id'] = df.loc[mask].apply(
+                lambda row: row['email'] if pd.notna(row['email']) 
+                else (row['username'] if pd.notna(row['username']) else None),
+                axis=1
+            )
+
+        if df['username'].isna().any():
+            # If username is missing, populate from email
+            mask = df['username'].isna()
+            df.loc[mask, 'username'] = df.loc[mask, 'email']
+
+        # Handle name fields
         if 'first_name' in df.columns and 'last_name' in df.columns:
-            df['full_name'] = df['first_name'] + ' ' + df['last_name']
+            # Create full_name from first_name and last_name if missing
+            mask = df['full_name'].isna() & df['first_name'].notna() & df['last_name'].notna()
+            df.loc[mask, 'full_name'] = df.loc[mask, 'first_name'] + ' ' + df.loc[mask, 'last_name']
 
         # Convert datetime fields
         date_fields = ['created_at', 'updated_at', 'last_login_at']
@@ -83,23 +79,41 @@ class DataTransformer:
 
         # Handle is_active field
         if 'is_active' in df.columns:
-            df['is_active'] = df['is_active'].map({'Yes': 'true', 'No': 'false'})
+            df['is_active'] = df['is_active'].map({'Yes': 'Yes', 'No': 'No'})
 
         return df
 
     def _transform_groups(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Transform Groups tab data."""
+        """Transform Groups tab data according to schema rules."""
+        # Define the exact column order
+        COLUMN_ORDER = ['group_id', 'group_name', 'group_description']
+        
         if df.empty:
-            return df
+            return pd.DataFrame(columns=COLUMN_ORDER)
+
+        # Create a new empty DataFrame with the correct column order
+        result = pd.DataFrame(columns=COLUMN_ORDER)
         
-        # Create a new DataFrame to avoid modifying the original
-        transformed_df = df.copy()
+        # Populate data in the correct order
+        result.loc[:, 'group_id'] = range(1, len(df) + 1)
+        result.loc[:, 'group_name'] = df['group_name'] if 'group_name' in df.columns else ''
+        result.loc[:, 'group_description'] = (
+            df['group_description'] if 'group_description' in df.columns 
+            else df['group_name'] if 'group_name' in df.columns 
+            else ''
+        )
         
-        # If group_name is not present, return empty DataFrame
-        if 'group_name' not in transformed_df.columns:
-            return pd.DataFrame()
+        # Fill missing descriptions with group names
+        mask = result['group_description'].isna()
+        result.loc[mask, 'group_description'] = result.loc[mask, 'group_name']
         
-        return transformed_df
+        # Store mapping for relationship resolution
+        for idx, row in result.iterrows():
+            if pd.notna(row['group_name']):
+                self.group_id_map[str(row['group_name'])] = row['group_id']
+        
+        # Final force of column order
+        return result[COLUMN_ORDER].copy()
 
     def _transform_roles(self, df: pd.DataFrame) -> pd.DataFrame:
         """Transform Roles tab data."""

@@ -86,6 +86,9 @@ def main():
         # Map headers
         mappings = {}
         for tab_name, df in data.items():
+            # Normalize tab name to handle variations
+            normalized_tab_name = tab_name.replace("Group ", "").strip()  # Remove "Group " prefix if present
+            
             print_header(f"Processing {tab_name} Tab")
             
             # Check if tab is empty
@@ -105,10 +108,10 @@ def main():
                 continue
             
             # First attempt automatic mapping based on synonyms
-            initial_mappings = mapper.map_headers(df.columns, tab_name)
+            initial_mappings = mapper.map_headers(df.columns, normalized_tab_name)
             
             # Check for missing mandatory fields
-            mandatory_fields = mapper.get_mandatory_fields(tab_name)
+            mandatory_fields = mapper.get_mandatory_fields(normalized_tab_name)
             mapped_mandatory = set(v for v in initial_mappings.values() if v in mandatory_fields)
             missing_mandatory = set(mandatory_fields) - mapped_mandatory
             
@@ -118,10 +121,10 @@ def main():
                     print(f"  • {field}")
             
             # Review and confirm mappings
-            mappings[tab_name] = mapper.review_mappings(
+            mappings[normalized_tab_name] = mapper.review_mappings(
                 initial_mappings,
                 df.columns,
-                tab_name,
+                normalized_tab_name,
                 df
             )
             

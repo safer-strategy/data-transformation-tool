@@ -21,6 +21,11 @@ class OutputGenerator:
             "Role Resources",
             "Group Groups"
         ]
+        # Define column orders for each tab
+        self.column_orders = {
+            "Groups": ["group_id", "group_name", "group_description"],
+            # Add other tab column orders as needed
+        }
 
     def generate_excel(self, data: Dict[str, pd.DataFrame], output_path: str) -> None:
         """Generate Excel output files."""
@@ -72,6 +77,11 @@ class OutputGenerator:
                     # Keep only columns defined in schema
                     schema_columns = list(self.schema[tab_name].keys())
                     existing_columns = [col for col in schema_columns if col in df.columns]
+                    
+                    # Use predefined column order if available
+                    if tab_name in self.column_orders:
+                        existing_columns = [col for col in self.column_orders[tab_name] if col in df.columns]
+                    
                     processed[tab_name] = df[existing_columns].copy()
                 else:
                     processed[tab_name] = df.copy()
@@ -91,6 +101,11 @@ class OutputGenerator:
                     logger.debug(f"  Empty: {df.empty}")
                     
                     if not df.empty:
+                        # Ensure correct column order before writing
+                        if tab_name in self.column_orders:
+                            columns = [col for col in self.column_orders[tab_name] if col in df.columns]
+                            df = df[columns]
+                        
                         logger.info(f"Writing sheet {tab_name} with {df.shape[0]} rows and {df.shape[1]} columns")
                         df.to_excel(writer, sheet_name=tab_name, index=False)
                         sheets_written = True

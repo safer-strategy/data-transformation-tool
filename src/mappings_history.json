@@ -61,5 +61,7 @@
   "Group Groups:source_group_id": "parent_group_id",
   "Group Groups:destination_group_id": "child_group_id",
   "source_group_id": "parent_group_id",
-  "destination_group_id": "child_group_id"
+  "destination_group_id": "child_group_id",
+  "Groups:Description": "group_description",
+  "Description": "group_description"
 }
