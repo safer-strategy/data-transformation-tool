@@ -149,7 +149,8 @@ flowchart TD
 ### Entity Data
 - **Users**:
   - Required: user_id/username/email
-  - Required: first_name + last_name OR full_name
+  - Required for mapping: first_name + last_name OR full_name
+    - All 3 fields (first_name, last_name, full_name) must be populated in output
   - is_active: "Yes" or "No"
   - Dates in ISO 8601 format
 
@@ -163,11 +164,30 @@ flowchart TD
   - Required: resource_id or resource_name
 
 ### Relationships
-- User Groups
-- User Roles
-- Group Roles
-- User Resources
-- Role Resources
+- **User Groups**:
+  - All fields required
+  - user_id: Uses Users tab value, or email, or username
+  - group_id: Uses Groups tab value or incremental number
+
+- **User Roles**:
+  - All fields required
+  - user_id: Same rules as User Groups
+  - role_id: Uses Roles tab value or role_name
+
+- **Group Roles**:
+  - All fields required
+  - group_id: Uses Groups tab value or incremental number
+  - role_id: Uses Roles tab value or role_name
+
+- **User Resources**:
+  - All fields required
+  - user_id: Same rules as User Groups
+  - resource_id: Uses Resources tab value or resource_name
+
+- **Role Resources**:
+  - All fields required
+  - role_id: Uses Roles tab value or role_name
+  - resource_id: Uses Resources tab value or resource_name
 
 ## Error Handling
 
