@@ -101,13 +101,27 @@ class DataValidator:
 
     def _validate_user_name(self, df: pd.DataFrame) -> Tuple[pd.Series, list]:
         """Validate user name fields."""
+        # Check if we have full_name
         has_full_name = df['full_name'].notna()
+        
+        # Check if we have both first_name and last_name
         has_first_last = df['first_name'].notna() & df['last_name'].notna()
+        
+        # A record is valid if it has either full_name OR (first_name AND last_name)
         valid_names = has_full_name | has_first_last
+        
         reasons = []
         if not valid_names.all():
             count = (~valid_names).sum()
             reasons.append(f"Missing name fields (either full_name or first_name+last_name) for {count} records")
+            
+        # After transformation, all records should have all three fields populated
+        if df['full_name'].notna().any():  # If we have any full_name values
+            missing_split = ~(df['first_name'].notna() & df['last_name'].notna())
+            if missing_split.any():
+                count = missing_split.sum()
+                reasons.append(f"Failed to split full_name into first_name and last_name for {count} records")
+        
         return valid_names, reasons
 
     def _validate_is_active(self, df: pd.DataFrame) -> Tuple[pd.Series, list]:

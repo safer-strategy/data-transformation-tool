@@ -12,7 +12,7 @@ If you don't have data for one or more entities, you can leave the respective ta
 
 - Every record in the **Users** tab must include at least one of the following fields: `user_id`, `username`, or `email`.
 - Either `first_name` + `last_name` **or** `full_name` is mandatory.
-  - `full_name` should be a concatenation of `first_name` and `last_name`.
+  - `full_name` should be a concatenation of `first_name` and `last_name`. All 3 fields are required to be populated in the output.
 - The `is_active` field should have a value of either **Yes** or **No**.
 - The fields `create_at`, `updated_at`, and `last_login_at` must follow a valid datetime format. For example `2023-01-01T12:00:00.00Z`  
   - Convert datetime to ISO 8601
@@ -48,7 +48,7 @@ If you don't have data for one or more entities, you can leave the respective ta
 - All fields must be populated in each row.
 - **user_id** population:
     - If the `user_id` field was provided in the **Users** tab, use it in the current tab.
-    - If `user_id` was not provided, but both `username` and `email` were, populate `username` under `user_id`.
+    - If `user_id` was not provided, but both `username` and `email` were, populate `user_id` with value copied from `email`.
     - If only `username` was provided, populate `username` under `user_id`.
     - If only `email` was provided, populate `email` under `user_id`.
 - **group_id** population:

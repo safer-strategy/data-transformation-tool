@@ -1,6 +1,7 @@
 # Ignore uploads and converts directories
 uploads/
 converts/
+done/
 
 # Python virtual environment
 .venv/

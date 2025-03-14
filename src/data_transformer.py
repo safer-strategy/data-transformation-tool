@@ -31,27 +31,20 @@ class DataTransformer:
         # Special handling for different tabs
         if tab_name == "Users" and not transformed.empty:
             # Handle user identification fields
-            if 'user_id' not in transformed.columns:
-                if 'username' in df.columns:
-                    transformed['user_id'] = df['username'].copy()
-                    transformed['username'] = df['username'].copy()
-                elif 'email' in df.columns:
-                    transformed['user_id'] = df['email'].copy()
-                    transformed['username'] = df['email'].copy()
-            elif 'username' not in transformed.columns:
-                transformed['username'] = transformed['user_id'].copy()
-            
-            # Transform is_active field to Yes/No
-            if 'is_active' in transformed.columns:
-                transformed['is_active'] = transformed['is_active'].apply(self._transform_boolean_to_yes_no)
+            if 'user_id' not in transformed.columns or transformed['user_id'].isna().all():
+                if 'username' in transformed.columns and transformed['username'].notna().any():
+                    transformed['user_id'] = transformed['username'].copy()
+                elif 'email' in transformed.columns and transformed['email'].notna().any():
+                    transformed['user_id'] = transformed['email'].copy()
             
             # Handle name fields
-            if 'full_name' in transformed.columns and not transformed['full_name'].empty:
-                if 'first_name' not in transformed.columns and 'last_name' not in transformed.columns:
-                    name_parts = transformed['full_name'].str.split(n=1, expand=True)
-                    transformed['first_name'] = name_parts[0]
-                    transformed['last_name'] = name_parts[1] if len(name_parts.columns) > 1 else ''
+            if 'full_name' in transformed.columns and transformed['full_name'].notna().any():
+                # Split full_name into first_name and last_name
+                name_parts = transformed['full_name'].str.split(n=1, expand=True)
+                transformed['first_name'] = name_parts[0]
+                transformed['last_name'] = name_parts[1].fillna('')
             elif 'first_name' in transformed.columns and 'last_name' in transformed.columns:
+                # Create full_name from first_name and last_name
                 transformed['full_name'] = transformed['first_name'].fillna('') + ' ' + transformed['last_name'].fillna('')
                 transformed['full_name'] = transformed['full_name'].str.strip()
             
@@ -60,6 +53,10 @@ class DataTransformer:
             for field in datetime_fields:
                 if field in transformed.columns:
                     transformed[field] = transformed[field].apply(self._transform_datetime_to_iso)
+            
+            # Transform is_active field to Yes/No
+            if 'is_active' in transformed.columns:
+                transformed['is_active'] = transformed['is_active'].apply(self._transform_boolean_to_yes_no)
         
         elif tab_name == "Groups" and not transformed.empty:
             # Add incremental group_id
