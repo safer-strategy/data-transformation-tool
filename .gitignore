@@ -1,6 +1,9 @@
 # Ignore uploads and converts directories
-uploads/
-converts/
+# Ignore uploads and converts directory contents but not the directories themselves
+uploads/*
+!uploads/.gitkeep
+converts/*
+!converts/.gitkeep
 done/
 
 # Python virtual environment
