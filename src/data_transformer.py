@@ -45,7 +45,7 @@ class DataTransformer:
     def _transform_users(self, df: pd.DataFrame) -> pd.DataFrame:
         """Transform Users tab data."""
         # Ensure all required columns exist
-        required_cols = ['user_id', 'username', 'email', 'first_name', 'last_name', 'full_name']
+        required_cols = ['user_id', 'username', 'email', 'first_name', 'last_name', 'full_name', 'is_active']
         for col in required_cols:
             if col not in df.columns:
                 df[col] = None
@@ -71,15 +71,24 @@ class DataTransformer:
             mask = df['full_name'].isna() & df['first_name'].notna() & df['last_name'].notna()
             df.loc[mask, 'full_name'] = df.loc[mask, 'first_name'] + ' ' + df.loc[mask, 'last_name']
 
+        # Transform is_active field - check all possible column names
+        status_columns = ['Active', 'Status', 'IsActive', 'is_active', 'active']
+        status_column = next((col for col in status_columns if col in df.columns), None)
+        
+        if status_column:
+            self.logger.info(f"Found status column: {status_column}")
+            self.logger.info(f"Unique status values before transformation: {df[status_column].unique().tolist()}")
+            df['is_active'] = df[status_column].apply(self._transform_boolean_to_yes_no)
+            self.logger.info(f"Unique is_active values after transformation: {df['is_active'].unique().tolist()}")
+        else:
+            self.logger.warning("No status column found, defaulting is_active to 'No'")
+            df['is_active'] = 'No'
+
         # Convert datetime fields
         date_fields = ['created_at', 'updated_at', 'last_login_at']
         for field in date_fields:
             if field in df.columns:
                 df[field] = pd.to_datetime(df[field], errors='coerce').dt.strftime('%Y-%m-%dT%H:%M:%SZ')
-
-        # Handle is_active field
-        if 'is_active' in df.columns:
-            df['is_active'] = df['is_active'].map({'Yes': 'Yes', 'No': 'No'})
 
         return df
 
@@ -158,28 +167,36 @@ class DataTransformer:
         return transformed_rel
 
     def _transform_boolean_to_yes_no(self, value) -> str:
-        """Transform various status values to Yes/No format."""
+        """Transform various status values to Yes/No format using fuzzy matching."""
         if pd.isna(value):
             return "No"
         
         value_str = str(value).lower().strip()
+        self.logger.debug(f"Processing status value: '{value_str}'")
         
-        # Map various active status values
+        # Define sets of values that should be considered active/inactive
         active_values = {
-            'true', '1', 'yes', 'y', 't', 'active', 'enabled'
-        }
-        inactive_values = {
-            'false', '0', 'no', 'n', 'f', 'inactive', 'disabled',
-            'deactivated', 'partially deactivated'
+            'active',
+            'yes',
+            'true',
+            't',
+            '1',
+            'enabled',
+            'on',
+            'y'
         }
         
+        # Simple exact match first
         if value_str in active_values:
+            self.logger.debug(f"Exact match found for active value: '{value_str}'")
             return "Yes"
-        elif value_str in inactive_values:
-            return "No"
         
-        # Log unexpected values
-        self.logger.warning(f"Unexpected is_active value: '{value}', defaulting to 'No'")
+        # For 'Active' specifically, do a case-insensitive exact match
+        if value_str == "active":
+            self.logger.debug(f"Case-insensitive match found for 'active': '{value_str}'")
+            return "Yes"
+        
+        self.logger.debug(f"Value '{value_str}' not matched as active, returning 'No'")
         return "No"
 
     def _transform_datetime_to_iso(self, value) -> str:

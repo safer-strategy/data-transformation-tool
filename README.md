@@ -1,4 +1,4 @@
-# Data Transformation and Validation Tool
+# Data Transformation and Validation Tool (v1.0.0)
 
 Custom App integration got you down? This tool is here to help!
 
@@ -285,3 +285,13 @@ For support:
 - Thanks to all contributors
 - Built with Python and open-source libraries
 - Inspired by real-world data transformation needs
+
+## Changelog
+
+### v1.0.0 (Initial Release)
+- Multi-format input support (Excel/CSV)
+- Smart header mapping with fuzzy matching
+- Data validation and transformation
+- Standardized output generation
+- Interactive CLI interface
+- Comprehensive logging
