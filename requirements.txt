@@ -1,6 +1,14 @@
-pandas
-openpyxl
-fuzzywuzzy
-inquirer
-python-Levenshtein
-PyYAML
+# Core dependencies (existing)
+pandas>=1.5.0
+openpyxl>=3.1.0
+fuzzywuzzy>=0.18.0
+inquirer>=3.1.0
+python-Levenshtein>=0.21.0
+PyYAML>=6.0.1
+
+# New dependencies for v1.1.0
+Flask>=2.3.0
+Flask-WTF>=1.1.0  # For form handling
+python-dotenv>=1.0.0  # For environment management
+Werkzeug>=2.3.0  # Required by Flask
+click>=8.1.0  # Required by Flask

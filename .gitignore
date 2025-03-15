@@ -5,6 +5,8 @@ uploads/*
 converts/*
 !converts/.gitkeep
 done/
+TRDv1.1.0.txt
+todo.txt
 
 # Python virtual environment
 .venv/

@@ -1,59 +1,37 @@
-#!/bin/zsh
+#!/bin/bash
 
-# Clear the screen
-clear
-
-# Configuration
-VENV_NAME=".venv"
-INPUT_DIR="./uploads"
-REQUIREMENTS_FILE="requirements.txt"
-VENV_PATH="$(pwd)/$VENV_NAME"
-VENV_PYTHON="$VENV_PATH/bin/python3"
-VENV_PIP="$VENV_PATH/bin/pip"
-
-# Color Definitions
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
-CYAN='\033[0;36m'
-WHITE='\033[1;37m'
 NC='\033[0m'
 
-# Print header function
-print_header() {
-    echo -e "\n${MAGENTA}╔════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║${WHITE}         Excel Data Processor          ${MAGENTA}║${NC}"
-    echo -e "${MAGENTA}╚════════════════════════════════════════╝${NC}\n"
-}
+# Configuration
+VENV_NAME="venv"
+VENV_PYTHON="$VENV_NAME/bin/python3"
+VENV_PIP="$VENV_NAME/bin/pip"
+REQUIREMENTS_FILE="requirements.txt"
+FLASK_ENV_FILE=".env"
 
-# Print section header
 print_section() {
-    echo -e "\n${BLUE}▶ $1${NC}"
+    echo -e "\n${GREEN}=== $1 ===${NC}\n"
 }
 
-# Function to check if virtual environment is active
-is_venv_active() {
-    if [ -n "$VIRTUAL_ENV" ]; then
-        if [ "$(basename "$VIRTUAL_ENV")" = "$VENV_NAME" ]; then
-            return 0
-        fi
+setup_flask_env() {
+    print_section "Setting up Flask environment"
+    
+    if [ ! -f "$FLASK_ENV_FILE" ]; then
+        echo -e "${YELLOW}Creating Flask environment file...${NC}"
+        cat > "$FLASK_ENV_FILE" << EOL
+FLASK_APP=src/app.py
+FLASK_ENV=development
+FLASK_DEBUG=1
+SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(16))')
+EOL
+        echo -e "${GREEN}✓${NC} Created Flask environment file"
+    else
+        echo -e "${GREEN}✓${NC} Flask environment file exists"
     fi
-    return 1
-}
-
-# Function to check if requirements need updating
-requirements_need_update() {
-    if [ ! -f "$VENV_PATH/requirements.md5" ]; then
-        return 0
-    fi
-    current_md5=$(md5sum "$REQUIREMENTS_FILE" | cut -d' ' -f1)
-    stored_md5=$(cat "$VENV_PATH/requirements.md5")
-    if [ "$current_md5" != "$stored_md5" ]; then
-        return 0
-    fi
-    return 1
 }
 
 # Function to create/update virtual environment
@@ -72,73 +50,19 @@ setup_venv() {
         echo -e "${GREEN}✓${NC} Virtual environment exists"
     fi
 
-    # Update pip to latest version (suppress output but keep errors visible)
     echo -e "${YELLOW}Updating pip to latest version...${NC}"
     "$VENV_PIP" install --upgrade pip > /dev/null 2>&1
     echo -e "${GREEN}✓${NC} Pip updated successfully"
 }
 
-# Function to install/update requirements
-install_requirements() {
-    print_section "Checking dependencies"
-    
-    if [ -f "$REQUIREMENTS_FILE" ]; then
-        if requirements_need_update; then
-            echo -e "${YELLOW}Installing/updating requirements...${NC}"
-            # Suppress 'Requirement already satisfied' messages
-            "$VENV_PIP" install -r "$REQUIREMENTS_FILE" 2>&1 | grep -v "Requirement already satisfied" || true
-            md5sum "$REQUIREMENTS_FILE" | cut -d' ' -f1 > "$VENV_PATH/requirements.md5"
-            echo -e "${GREEN}✓${NC} Requirements updated successfully"
-        else
-            echo -e "${GREEN}✓${NC} Requirements are up to date"
-        fi
-    else
-        echo -e "${RED}✗ Error: $REQUIREMENTS_FILE not found${NC}"
-        exit 1
-    fi
-}
-
-# Main execution starts here
-print_header
-
-# Ensure uploads directory exists
-if [ ! -d "$INPUT_DIR" ]; then
-    print_section "Creating uploads directory"
-    mkdir -p "$INPUT_DIR"
-    echo -e "${GREEN}✓${NC} Created uploads directory"
-fi
-
-# Setup virtual environment and install requirements
+# Main execution
 setup_venv
-install_requirements
+setup_flask_env
 
-# Process files
-print_section "Processing files"
+print_section "Installing dependencies"
+"$VENV_PIP" install -r "$REQUIREMENTS_FILE"
 
-if [ ! -d "$INPUT_DIR" ]; then
-    echo -e "${RED}✗ Error: uploads directory not found${NC}"
-    exit 1
-fi
-
-# Get all Excel and CSV files
-files=($INPUT_DIR/*.xlsx $INPUT_DIR/*.csv(N))
-
-if [ ${#files[@]} -eq 0 ]; then
-    echo -e "${RED}✗ No Excel or CSV files found in uploads directory${NC}"
-    exit 1
-fi
-
-# Process the first file found
-input_file="${files[1]}"
-echo -e "${CYAN}Processing: ${WHITE}${input_file}${NC}"
-"$VENV_PYTHON" src/main.py "$input_file"
-
-exit_code=$?
-
-if [ $exit_code -eq 0 ]; then
-    echo -e "\n${GREEN}✓ Processing completed successfully${NC}"
-else
-    echo -e "\n${RED}✗ Processing failed${NC}"
-fi
-
-exit $exit_code
+print_section "Setup complete"
+echo -e "${GREEN}✓${NC} Environment ready for development"
+echo -e "\nTo activate the virtual environment, run:"
+echo -e "${YELLOW}source $VENV_NAME/bin/activate${NC}"
