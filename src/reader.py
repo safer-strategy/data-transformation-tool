@@ -1,19 +1,33 @@
 import pandas as pd
-import os
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 class Reader:
-    def read_files(self, file_path):
-        if file_path.endswith('.xlsx'):
-            return pd.read_excel(file_path, sheet_name=None)
-        elif file_path.endswith('.csv'):
-            if os.path.isdir(file_path):
-                data = {}
-                for filename in os.listdir(file_path):
-                    if filename.endswith('.csv'):
-                        tab_name = os.path.splitext(filename)[0]
-                        data[tab_name] = pd.read_csv(os.path.join(file_path, filename))
-                return data
-            else:
-                return {os.path.splitext(os.path.basename(file_path))[0]: pd.read_csv(file_path)}
-        else:
-            raise ValueError("Unsupported file type. Use .xlsx or .csv")
+    CHUNK_SIZE = 5000  # Process 5000 rows at a time
+    
+    def read_files(self, path, max_workers=4):
+        """Read multiple files with performance optimization"""
+        path = Path(path)
+        if path.is_file():
+            return self._read_single_file(path)
+        
+        # Process multiple files in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for file_path in path.glob("*.csv"):
+                futures.append(executor.submit(self._read_single_file, file_path))
+            
+            results = {}
+            for future in futures:
+                data = future.result()
+                results.update(data)
+                
+        return results
+        
+    def _read_single_file(self, file_path):
+        """Read a single file in chunks"""
+        if file_path.suffix == '.csv':
+            chunks = pd.read_csv(file_path, chunksize=self.CHUNK_SIZE)
+            return pd.concat(chunks)
+        elif file_path.suffix in ['.xlsx', '.xls']:
+            return pd.read_excel(file_path, engine='openpyxl')

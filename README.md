@@ -1,297 +1,85 @@
-# Data Transformation and Validation Tool (v1.0.0)
+# Data Transformation Tool v1.1.0
 
-Custom App integration got you down? This tool is here to help!
+## New Features
+- Flask-based GUI interface for easier data manipulation
+- Automated source detection with fuzzy matching
+- Enhanced schema storage and versioning
+- Real-time progress tracking
+- Comprehensive error handling
+- Cross-browser support (Chrome, Firefox)
 
-## TLDR
-A Python tool that converts messy user access management data into clean, standardized Excel files.
-
-### Quick Start
+## Installation
+Run the setup script:
 ```bash
-git clone <your-repo>
-cd data-transformation-tool
 ./init.sh
-python src/main.py <input_file_or_directory>
 ```
-
-### Key Features
-- Reads Excel/CSV files → Outputs standardized Excel
-- Smart column mapping with fuzzy matching
-- Validates user data (IDs, names, dates, relationships)
-- Separates valid/invalid records
-- Handles: Users, Groups, Roles, Resources, and their relationships
-
-### Input/Output
-- Put files in: `uploads/`
-- Get results in: `converts/`
-  - `converted_[filename].xlsx`: Valid records
-  - `invalid_records_[filename].xlsx`: Invalid records
-  - `validation.log`: Processing details
-
----
-
-
-## Overview
-
-This tool processes input files (Excel/CSV) containing user access management data, performs data transformation and validation according to predefined schema rules, and generates standardized output files.
-
-## Features
-
-- **Multi-format Input Support**: Handles Excel and CSV files
-- **Interactive Header Mapping**: Smart column mapping with fuzzy matching
-- **Data Validation**: Comprehensive validation based on schema rules
-- **Data Transformation**: Standardizes data formats including:
-  - Date/time to ISO 8601
-  - Boolean values to Yes/No
-  - User identification fields
-  - Relationship mappings
-- **Error Handling**: Separate output files for valid and invalid records
-- **Logging**: Detailed logging for debugging and audit trails
-
-## System Requirements
-
-- Python 3.8+
-- zsh shell (for automated setup)
+The script is idempotent and can be safely run multiple times.
 
 ## Quick Start
-
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/data-transformation-tool.git
-cd data-transformation-tool
-```
-
-2. Place your input file(s) in the `uploads` directory
-
-3. Run the initialization script:
-```bash
-chmod +x init.sh
-./init.sh
-```
-
-The script will:
-- Create a virtual environment
-- Install required dependencies
-- Process files from the `uploads` directory
-- Generate output files in the `converts` directory
-
-## Manual Installation (Alternative)
-
-If you prefer manual setup:
-
-1. Create a virtual environment:
-```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-3. Run manually:
-```bash
-python src/main.py <input_file_or_directory>
-```
-
-## Project Structure
-
-```
-├── init.sh                    # Automated setup and execution script
-├── src/
-│   ├── main.py               # Entry point
-│   ├── reader.py             # Input file reader
-│   ├── header_mapper.py      # Column mapping logic
-│   ├── data_transformer.py   # Data transformation
-│   ├── validator.py          # Data validation
-│   ├── output_generator.py   # Output file generation
-│   ├── schema.json          # Data schema definition
-│   └── header_mappings.yaml # Saved header mappings
-├── uploads/                  # Input directory
-├── converts/                 # Output directory
-├── tests/                   # Test files
-├── requirements.txt         # Dependencies
-└── README.md               # This file
-```
-
-## Data Flow
-
-```mermaid
-flowchart TD
-    A[Input File] --> B[Reader]
-    B --> C[Header Mapper]
-    C --> D[Data Transformer]
-    D --> E[Validator]
-    E --> F{Valid?}
-    F -->|Yes| G[Valid Output]
-    F -->|No| H[Invalid Output]
-    
-    subgraph "Header Mapping Process"
-    C1[Load Schema] --> C2[Fuzzy Match]
-    C2 --> C3[User Review]
-    C3 --> C4[Save Mappings]
-    end
-    
-    subgraph "Transformation Process"
-    D1[Map Fields] --> D2[Format Dates]
-    D2 --> D3[Convert Booleans]
-    D3 --> D4[Handle Relationships]
-    end
-    
-    subgraph "Validation Process"
-    E1[Check Required Fields] --> E2[Validate Formats]
-    E2 --> E3[Verify Relationships]
-    end
-```
-
-## Schema Rules
-
-### Entity Data
-- **Users**:
-  - Required: user_id/username/email
-  - Required for mapping: first_name + last_name OR full_name
-    - All 3 fields (first_name, last_name, full_name) must be populated in output
-  - is_active: "Yes" or "No"
-  - Dates in ISO 8601 format
-
-- **Groups**:
-  - Required: group_id or group_name
-  
-- **Roles**:
-  - Required: role_id or role_name
-  
-- **Resources**:
-  - Required: resource_id or resource_name
-
-### Relationships
-- **User Groups**:
-  - All fields required
-  - user_id: Uses Users tab value, or email, or username
-  - group_id: Uses Groups tab value or incremental number
-
-- **User Roles**:
-  - All fields required
-  - user_id: Same rules as User Groups
-  - role_id: Uses Roles tab value or role_name
-
-- **Group Roles**:
-  - All fields required
-  - group_id: Uses Groups tab value or incremental number
-  - role_id: Uses Roles tab value or role_name
-
-- **User Resources**:
-  - All fields required
-  - user_id: Same rules as User Groups
-  - resource_id: Uses Resources tab value or resource_name
-
-- **Role Resources**:
-  - All fields required
-  - role_id: Uses Roles tab value or role_name
-  - resource_id: Uses Resources tab value or resource_name
-
-## Error Handling
-
-The tool generates two output files:
-1. `converted_[filename].xlsx`: Contains valid records
-2. `invalid_records_[filename].xlsx`: Contains invalid records with error details
-
-## Logging
-
-- Log file: `validation.log`
-- Includes:
-  - Transformation errors
-  - Validation failures
-  - Processing statistics
-
-## Interactive Features
-
-- Smart header mapping with fuzzy matching
-- Preview of data samples during mapping
-- Ability to save and reuse mappings
-- Interactive confirmation of mappings
-- Option to skip optional fields
-- Progress indicators during processing
-
-## Best Practices
-
-1. **Input Files**:
-   - Place files in the `uploads` directory
-   - Use either Excel (.xlsx) or CSV format
-   - Ensure data consistency within columns
-
-2. **Header Mapping**:
-   - Review automatic mappings carefully
-   - Use saved mappings for consistency
-   - Map all mandatory fields
-
-3. **Data Validation**:
-   - Check invalid records output
-   - Review validation.log for errors
-   - Correct source data if needed
-
-## Troubleshooting
-
-Common issues and solutions:
-
-1. **Environment Setup**:
+1. GUI Interface (New!):
    ```bash
-   # If init.sh fails, try:
-   chmod +x init.sh
-   ./init.sh
+   source venv/bin/activate
+   python src/app.py
+   ```
+   Then open http://localhost:5000 in your browser
+
+2. CLI Usage (Traditional):
+   ```bash
+   source venv/bin/activate
+   python src/main.py input_file.csv
    ```
 
-2. **Input Files**:
-   - Ensure files are not open in other applications
-   - Check file permissions
-   - Verify file format (Excel/CSV)
+## System Requirements
+- Python 3.8+
+- Modern web browser (Chrome, Firefox)
+- 10MB minimum free disk space
 
-3. **Processing Errors**:
-   - Check validation.log for details
-   - Ensure all mandatory fields are mapped
-   - Verify data formats match schema requirements
+## Directory Structure
+```
+.
+├── src/
+│   ├── app.py          # Flask application (New!)
+│   └── main.py         # CLI interface
+├── uploads/            # File upload directory
+├── converts/           # Conversion output
+├── schemas/            # Schema storage
+├── validates/          # Validation results
+└── logs/              # Application logs
+```
+
+## New GUI Features
+- Drag-and-drop file upload
+- Interactive schema mapping
+- Real-time validation feedback
+- Progress tracking
+- Error notifications
+- Accessibility compliance
+
+## Schema Management
+- Version control for schemas
+- Automated schema matching
+- Schema validation
+- Sample data extraction
+
+## Performance
+- Handles files up to 10MB
+- Real-time processing feedback
+- Optimized for large datasets
+
+## Security
+- Secure file handling
+- Input validation
+- Access control
+- Error handling
+
+## Troubleshooting
+Check application logs in `logs/` directory
 
 ## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-### Development Guidelines
-
-- Follow PEP 8 style guide
-- Add tests for new features
-- Update documentation
-- Maintain backward compatibility
+See CONTRIBUTING.md for development guidelines.
 
 ## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+[License Type] - See LICENSE file for details
 
 ## Support
-
-For support:
-1. Check the documentation
-2. Review closed issues
-3. Open a new issue with:
-   - Description of the problem
-   - Steps to reproduce
-   - Expected vs actual behavior
-   - Log files and screenshots
-
-## Acknowledgments
-
-- Thanks to all contributors
-- Built with Python and open-source libraries
-- Inspired by real-world data transformation needs
-
-## Changelog
-
-### v1.0.0 (Initial Release)
-- Multi-format input support (Excel/CSV)
-- Smart header mapping with fuzzy matching
-- Data validation and transformation
-- Standardized output generation
-- Interactive CLI interface
-- Comprehensive logging
+For issues and feature requests, please use the GitHub issue tracker.

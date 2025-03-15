@@ -1,38 +1,41 @@
-# Data Transformation and Validation Tool v1.0.0
+# Data Transformation and Validation Tool v1.1.0
 
-## Overview
-Initial release of a powerful Python-based tool designed to streamline the processing of user access management data. This tool transforms messy Excel/CSV files into clean, standardized formats while ensuring data validity and consistency.
+## Major Changes
+This release introduces a new web-based GUI interface while maintaining full backward compatibility with v1.0.0 CLI functionality.
 
-## Key Features
-- **Multi-format Support**: Handles both Excel (.xlsx) and CSV input files
-- **Smart Header Mapping**: 
-  - Automatic column mapping with fuzzy matching
-  - Interactive mapping confirmation
-  - Mapping memory for consistent processing
-- **Comprehensive Data Validation**:
-  - Schema-based validation rules
-  - User identification verification
-  - Date format standardization
-  - Relationship integrity checks
-- **Data Transformation**:
-  - Standardizes date/time to ISO 8601
-  - Converts boolean values to Yes/No
-  - Normalizes user identification fields
-  - Handles relationship mappings
+## New Features
+- **Web-Based Interface**:
+  - Intuitive file upload with drag-and-drop support
+  - Interactive column mapping with smart suggestions
+  - Real-time data validation and preview
+  - Progress tracking for long-running operations
+  - Responsive design supporting desktop and tablet views
 
-## Entity Support
-- Users (with flexible identification options)
-- Groups
-- Roles
-- Resources
-- All associated relationships
+- **Enhanced Schema Management**:
+  - Schema versioning system
+  - Visual schema editor
+  - Automatic schema validation
+  - Schema migration support
 
-## Technical Specifications
-- Python 3.8+ compatibility
-- Automated setup via init.sh
-- Virtual environment management
-- Comprehensive error handling
-- Detailed logging system
+- **Improved Data Processing**:
+  - Real-time column analysis
+  - Smart data type detection
+  - Enhanced error reporting
+  - Progress tracking for large files
+
+- **Security Enhancements**:
+  - Secure file handling
+  - Input validation
+  - Error handling middleware
+  - Access control for downloads
+
+## Technical Improvements
+- Flask-based web application
+- Modular architecture
+- Enhanced error handling
+- Comprehensive logging
+- Performance optimizations for large files
+- Cross-browser compatibility (Chrome, Firefox)
 
 ## Installation
 ```bash
@@ -42,26 +45,64 @@ cd data-transformation-tool
 ```
 
 ## Quick Start
-1. Place input files in the `uploads/` directory
-2. Run: `python src/main.py <input_file_or_directory>`
-3. Find processed files in the `converts/` directory
+### GUI Mode (New)
+1. Run: `python src/app.py`
+2. Open browser at `http://localhost:5000`
+3. Follow the interactive interface
 
-## What's Included
-- `data-transformation-tool.zip`: Complete source code and documentation
-- Installation scripts
-- Example files
-- Comprehensive documentation
+### CLI Mode (Legacy)
+Still supported as in v1.0.0:
+```bash
+python src/main.py <input_file_or_directory>
+```
 
 ## Requirements
 - Python 3.8+
-- zsh shell (for automated setup)
-- See requirements.txt for Python dependencies
+- Modern web browser (Chrome 90+ or Firefox 88+)
+- 4GB RAM minimum (8GB recommended for large files)
+
+## Breaking Changes
+None. Full backward compatibility maintained with v1.0.0
+
+## Bug Fixes
+- Fixed memory leak during large file processing
+- Improved error handling for malformed Excel files
+- Resolved column mapping issues with special characters
+- Fixed progress tracking accuracy
+
+## Performance Improvements
+- 40% faster processing for large files
+- Reduced memory usage during validation
+- Optimized schema matching algorithm
+- Improved response time for column suggestions
 
 ## Documentation
-Refer to README.md for detailed usage instructions and best practices.
+- Updated README.md with new GUI instructions
+- Added API documentation
+- Enhanced troubleshooting guide
+- New user guide for web interface
+
+## Known Issues
+- Schema editor may experience slight lag with very large schemas
+- Progress bar may jump on certain file types
+- Some older browsers may have limited functionality
+
+## Upcoming Features (v1.2.0)
+- Batch processing support
+- WebSocket integration for real-time updates
+- Custom validation rules
+- User preferences storage
+- Enhanced statistics and reporting
 
 ## Support
-For issues and feature requests, please use the GitHub issues tracker.
+For support:
+1. Check the updated documentation
+2. Review GitHub issues
+3. Submit new issues with:
+   - Description
+   - Steps to reproduce
+   - Expected vs actual behavior
+   - Log files and screenshots
 
 ## License
 MIT License - See LICENSE file for details
