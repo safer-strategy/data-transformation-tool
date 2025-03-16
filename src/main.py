@@ -1,70 +1,258 @@
 import os
 import sys
 import json
+import logging
 from pathlib import Path
+from typing import Dict, Optional, List, Tuple
+
+import pandas as pd
+
 from reader import Reader
 from header_mapper import HeaderMapper
 from data_transformer import DataTransformer
 from validator import Validator
 from output_generator import OutputGenerator
-import logging
 
-def setup_logging(debug_mode=False):
-    """Configure logging settings."""
+
+def validate_input_file(file_path: str) -> bool:
+    """
+    Validate input file extension and existence.
+    
+    Args:
+        file_path: Path to the input file
+        
+    Returns:
+        bool: True if file is valid, False otherwise
+    """
+    path = Path(file_path)
+    if not path.exists():
+        logging.error(f"File not found: {file_path}")
+        return False
+    
+    if path.suffix.lower() not in ['.xlsx', '.csv']:
+        logging.error(
+            f"Unsupported file type: {path.suffix}. "
+            "Only .xlsx and .csv files are supported."
+        )
+        return False
+    
+    return True
+
+
+def read_excel_sheets(file_path: str) -> Optional[Dict[str, pd.DataFrame]]:
+    """
+    Read Excel sheets with user selection if multiple sheets exist.
+    
+    Args:
+        file_path: Path to the Excel file
+        
+    Returns:
+        Optional[Dict[str, pd.DataFrame]]: Dictionary of sheet names and their data,
+        or None if reading fails
+    """
+    try:
+        excel_file = pd.ExcelFile(file_path)
+        sheet_names = excel_file.sheet_names
+        
+        if len(sheet_names) == 0:
+            logging.error("Excel file contains no sheets")
+            return None
+        
+        if len(sheet_names) == 1:
+            return {sheet_names[0]: pd.read_excel(file_path)}
+        
+        print("\nAvailable sheets:")
+        for idx, name in enumerate(sheet_names, 1):
+            print(f"{idx}) {name}")
+        
+        selected_sheets = []
+        while True:
+            choice = input(
+                "\nSelect sheets to process (comma-separated numbers, or 'all'): "
+            ).strip()
+            
+            if choice.lower() == 'all':
+                selected_sheets = sheet_names
+                break
+            
+            try:
+                indices = [int(x.strip()) for x in choice.split(',')]
+                selected_sheets = [
+                    sheet_names[i-1] for i in indices 
+                    if 1 <= i <= len(sheet_names)
+                ]
+                if selected_sheets:
+                    break
+                print("No valid sheets selected. Please try again.")
+            except (ValueError, IndexError):
+                print("Invalid selection. Please try again.")
+        
+        return {
+            name: pd.read_excel(file_path, sheet_name=name) 
+            for name in selected_sheets
+        }
+    
+    except Exception as e:
+        logging.error(f"Error reading Excel file: {e}")
+        return None
+
+
+def setup_logging(debug_mode: bool = False) -> None:
+    """
+    Configure logging settings.
+    
+    Args:
+        debug_mode: Enable debug logging if True
+    """
     log_level = logging.DEBUG if debug_mode else logging.INFO
     logging.basicConfig(
         level=log_level,
-        format='%(message)s',  # Simplified format for better UX
+        format='%(message)s',
         handlers=[
             logging.FileHandler('validation.log'),
             logging.StreamHandler(sys.stdout)
         ]
     )
-    # Suppress debug messages from other modules
+    
     if not debug_mode:
         logging.getLogger('urllib3').setLevel(logging.WARNING)
         logging.getLogger('matplotlib').setLevel(logging.WARNING)
         logging.getLogger('PIL').setLevel(logging.WARNING)
 
-def print_header(text):
-    """Print a formatted header."""
+
+def print_header(text: str) -> None:
+    """
+    Print a formatted header.
+    
+    Args:
+        text: Header text to display
+    """
     print(f"\n{'='*80}\n{text.center(80)}\n{'='*80}\n")
 
+
 def get_output_path(input_path: str) -> str:
-    """Generate output path based on input path."""
+    """
+    Generate output path based on input path.
+    
+    Args:
+        input_path: Path to the input file
+        
+    Returns:
+        str: Path where output file should be saved
+    """
     input_path = Path(input_path)
     converts_dir = Path("converts")
     converts_dir.mkdir(exist_ok=True)
     
-    # Generate output filename
     output_name = f"converted_{input_path.stem}.xlsx"
     return str(converts_dir / output_name)
 
-def main():
-    if len(sys.argv) != 2:
-        print("Usage: python main.py <input_file_or_directory>")
-        sys.exit(1)
 
-    # Set up logging without debug messages
-    setup_logging(debug_mode=False)
-    logger = logging.getLogger(__name__)
-
-    input_path = sys.argv[1]
-    if not os.path.exists(input_path):
-        logger.error(f"Input path does not exist: {input_path}")
-        sys.exit(1)
-
-    # Get output path
-    output_path = get_output_path(input_path)
+def flatten_dataframes(
+    data: Dict[str, pd.DataFrame],
+    key_threshold: float = 0.8
+) -> Tuple[Optional[pd.DataFrame], List[str]]:
+    """
+    Flatten multiple dataframes using automatically detected key columns.
     
-    # Get schema path
+    Args:
+        data: Dictionary of sheet names and their corresponding dataframes
+        key_threshold: Minimum uniqueness ratio to consider a column as key
+        
+    Returns:
+        Tuple containing:
+        - Flattened dataframe or None if flattening fails
+        - List of detected key columns
+    """
+    if not data:
+        logging.error("No data to flatten")
+        return None, []
+
+    # Find potential key columns across all sheets
+    key_columns = []
+    for sheet_name, df in data.items():
+        for column in df.columns:
+            # Check if column has mostly unique values
+            if df[column].nunique() / len(df) >= key_threshold:
+                unique_ratio = df[column].nunique() / len(df)
+                logging.info(
+                    f"Potential key column found in {sheet_name}: "
+                    f"{column} (uniqueness: {unique_ratio:.2f})"
+                )
+                if column not in key_columns:
+                    key_columns.append(column)
+
+    if not key_columns:
+        logging.error("No suitable key columns found for flattening")
+        return None, []
+
+    # Start with the first dataframe as base
+    base_sheet_name = list(data.keys())[0]
+    result_df = data[base_sheet_name].copy()
+    
+    # Merge remaining dataframes
+    for sheet_name, df in list(data.items())[1:]:
+        common_keys = [col for col in key_columns if col in df.columns 
+                      and col in result_df.columns]
+        
+        if not common_keys:
+            logging.warning(
+                f"No common key columns found for sheet: {sheet_name}, skipping"
+            )
+            continue
+
+        try:
+            # Merge using all common key columns
+            result_df = pd.merge(
+                result_df,
+                df,
+                on=common_keys,
+                how='outer',
+                suffixes=('', f'_{sheet_name}')
+            )
+            
+            logging.info(
+                f"Merged sheet {sheet_name} using keys: {common_keys}"
+            )
+            
+            # Log missing data statistics
+            missing_count = result_df.isna().sum()
+            if missing_count.any():
+                logging.warning(
+                    f"Missing data after merging {sheet_name}:\n"
+                    f"{missing_count[missing_count > 0]}"
+                )
+                
+        except Exception as e:
+            logging.error(f"Error merging sheet {sheet_name}: {str(e)}")
+            return None, key_columns
+
+    return result_df, key_columns
+
+
+def main() -> int:
+    """
+    Main function with enhanced input processing and schema flattening.
+    
+    Returns:
+        int: Exit code (0 for success, 1 for failure)
+    """
+    setup_logging()
+    
+    if len(sys.argv) != 2:
+        logging.error("Usage: python src/main.py <input_file>")
+        return 1
+    
+    input_path = sys.argv[1]
+    if not validate_input_file(input_path):
+        return 1
+    
     current_dir = Path(__file__).parent
     schema_path = current_dir / 'schema.json'
-    
     if not schema_path.exists():
-        logger.error(f"Schema file not found at: {schema_path}")
-        sys.exit(1)
-
+        logging.error(f"Schema file not found at: {schema_path}")
+        return 1
+    
     try:
         print_header("Starting Data Processing")
         
@@ -74,115 +262,56 @@ def main():
         transformer = DataTransformer(str(schema_path))
         validator = Validator(str(schema_path))
         
+        # Read input based on file type
+        input_file = Path(input_path)
+        if input_file.suffix.lower() == '.xlsx':
+            data = read_excel_sheets(input_path)
+        else:  # .csv
+            data = {"Sheet1": pd.read_csv(input_path)}
+        
+        if not data:
+            return 1
+            
+        # Flatten data if multiple sheets exist
+        if len(data) > 1:
+            print_header("Flattening Multiple Sheets")
+            flattened_data, key_columns = flatten_dataframes(data)
+            
+            if flattened_data is not None:
+                data = {"Flattened": flattened_data}
+                logging.info(
+                    f"Successfully flattened data using keys: {key_columns}"
+                )
+            else:
+                logging.error("Failed to flatten data, processing sheets separately")
+        
         # Load schema for output generator
         with open(schema_path) as f:
             schema = json.load(f)
+        
         generator = OutputGenerator(schema)
-
-        # Read input
-        print("\nReading input files...")
-        data = reader.read_files(input_path)
+        output_path = get_output_path(input_path)
         
-        # Map headers
-        mappings = {}
-        for tab_name, df in data.items():
-            # Normalize tab name to handle variations
-            normalized_tab_name = tab_name.replace("Group ", "").strip()  # Remove "Group " prefix if present
+        # Process data through the pipeline
+        processed_data = reader.process_data(data)
+        if not processed_data:
+            return 1
             
-            print_header(f"Processing {tab_name} Tab")
-            
-            # Check if tab is empty
-            if df.empty:
-                print(f"\nSkipping empty tab: {tab_name}")
-                continue
-
-            # Ask if user wants to process this tab
-            while True:
-                choice = input(f"\nProcess '{tab_name}' tab? (y/n): ").lower()
-                if choice in ['y', 'n']:
-                    break
-                print("Please enter 'y' for yes or 'n' for no.")
-
-            if choice == 'n':
-                print(f"\nSkipping tab: {tab_name}")
-                continue
-            
-            # First attempt automatic mapping based on synonyms
-            initial_mappings = mapper.map_headers(df.columns, normalized_tab_name)
-            
-            # Check for missing mandatory fields
-            mandatory_fields = mapper.get_mandatory_fields(normalized_tab_name)
-            mapped_mandatory = set(v for v in initial_mappings.values() if v in mandatory_fields)
-            missing_mandatory = set(mandatory_fields) - mapped_mandatory
-            
-            if missing_mandatory:
-                print("\nMandatory fields requiring mapping:")
-                for field in missing_mandatory:
-                    print(f"  • {field}")
-            
-            # Review and confirm mappings
-            mappings[normalized_tab_name] = mapper.review_mappings(
-                initial_mappings,
-                df.columns,
-                normalized_tab_name,
-                df
-            )
-            
-            print(f"\n✓ Completed mapping for {tab_name}")
+        valid_data, invalid_data = validator.validate_data(processed_data)
         
-        # Transform data
-        print("\nTransforming data...")
-        transformed_data = {}
-        for tab_name, df in data.items():
-            if tab_name not in mappings:
-                continue
-                
-            try:
-                print(f"\nTransforming {tab_name} tab...")
-                transformed_df = transformer.transform_data_tab(
-                    df, 
-                    mappings[tab_name],
-                    tab_name
-                )
-                if not transformed_df.empty:
-                    transformed_data[tab_name] = transformed_df
-            except Exception as e:
-                logger.error(f"Error transforming {tab_name} tab: {str(e)}")
-                print(f"⚠️  Failed to transform {tab_name} tab. Skipping...")
-                continue
-        
-        if not transformed_data:
-            raise Exception("No data was successfully transformed")
-        
-        # Process relationships
-        print("\nProcessing relationships...")
-        entity_data = {k: v for k, v in transformed_data.items() 
-                      if k in ["Users", "Groups", "Roles", "Resources"]}
-        rel_data = {k: v for k, v in transformed_data.items() 
-                   if k not in entity_data}
-        
-        transformed_rel = transformer.resolve_relationships(entity_data, rel_data)
-        transformed_data.update(transformed_rel)
-        
-        # Validate data
-        print("\nValidating data...")
-        valid_data, invalid_data = validator.validate_data(transformed_data)
-        
-        # Generate output
-        print(f"\nGenerating output file: {output_path}")
+        # Generate output files
         generator.generate_excel(valid_data, output_path)
-        
-        if any(not df.empty for df in invalid_data.values()):
-            invalid_path = str(Path(output_path).parent / f"invalid_records_{Path(output_path).name}")
-            print(f"Generating invalid records file: {invalid_path}")
+        if invalid_data:
+            invalid_path = output_path.replace('.xlsx', '_invalid.xlsx')
             generator.generate_excel(invalid_data, invalid_path)
         
         print("\n✓ Processing completed successfully!")
         return 0
 
     except Exception as e:
-        logger.error(f"Error during processing: {str(e)}")
+        logging.error(f"Error during processing: {str(e)}")
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())
