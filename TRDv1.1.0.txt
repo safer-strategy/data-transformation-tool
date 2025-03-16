@@ -1,0 +1,429 @@
+Updated Technical Requirements Document (TRD) for AppMapper: Custom Application Transformation Tool Version 1.1.0
+This updated TRD reflects the change to limit the tool's output format to Excel (.xlsx) only, aligning with the supported format for AppMapper. The focus remains on enhancing the CLI with input processing and schema flattening, improving the CLI experience for messy column headers and data, deferring the LLM feature, and maintaining file-based storage for AppMaps. The existing init.sh script constraints are preserved, with no modifications allowed.
+1. Document Information
+Title: Technical Requirements Document for AppMapper: Custom Application Transformation Tool v1.1.0
+
+Version: 1.10 (Updated with .xlsx Output Only)
+
+Date: March 16, 2025
+
+Prepared By: Mike Carroll
+
+Project Repository: https://github.com/safer-strategy/data-transformation-tool
+
+2. Introduction
+AppMapper: Custom Application Transformation Tool processes identity data from customer-provided Excel (.xlsx) or CSV files, flattening schemas and transforming data into the supported Excel (.xlsx) output format. Version 1.1.0 enhances the CLI with robust input processing and schema flattening, improves the CLI experience for handling messy column headers and data, and introduces a standalone, browser-based Flask GUI with a three-step workflow: "Upload customer dataset," "Create AppMap," and "Transform & Download." The init.sh script manages the Python environment, requirements, and --input flags idempotently, with a --reset flag to rebuild the venv and .next directories, and no modifications are permitted. AppMaps and transitioned files are stored in JSON format on the filesystem, with a disabled "Use AI Assistant" button as a placeholder for future LLM integration. Future scalability, including automatic dataset processing and deployment, is planned.
+3. Objectives
+Process customer data from Excel (.xlsx) or CSV files, flattening schemas via CLI and GUI.
+
+Enhance the CLI with input processing, schema flattening, and improved handling of messy column headers and data, without altering init.sh.
+
+Provide a three-step GUI workflow with a placeholder for future AI assistance.
+
+Output transformed data exclusively in Excel (.xlsx) format.
+
+Store AppMaps and transitioned files in JSON format on the filesystem.
+
+Plan for future scalability, including automatic dataset processing and deployment.
+
+4. Functional Requirements
+4.1 Input Processing
+FR1.1: The tool shall accept only Excel (.xlsx) or CSV files via CLI or GUI upload.
+CLI: Leverage existing --input flag handled by init.sh to specify input files.
+
+Validation: Restrict to .xlsx and .csv formats, displaying error messages without modifying init.sh.
+
+FR1.2: The tool shall read all sheets from multi-sheet Excel files without predefined names.
+CLI: Add internal logic to handle sheet selection, integrating with --input (e.g., prompt user for sheet name).
+
+FR1.3: The tool shall process multiple CSV files from a directory or uploaded set.
+CLI: Support directory processing via internal logic, compatible with --input (e.g., detect multiple files).
+
+FR1.4: The tool shall extract all columns from each sheet or CSV file as potential source fields.
+
+FR1.5: The tool shall validate uploaded files, ensuring they are .xlsx or .csv.
+
+4.2 Schema Flattening
+FR2.1: The tool shall consolidate data into a flattened dataset using a common key (e.g., user_id).
+CLI: Perform merging internally, leveraging existing --input data.
+
+FR2.2: The tool shall detect key columns automatically or allow user specification.
+CLI: Use heuristics to suggest keys, with manual override via prompt.
+
+FR2.3: The tool shall handle missing or inconsistent data, logging warnings.
+CLI: Output warnings to the terminal without altering init.sh.
+
+4.3 CLI Enhancements
+FR3.1: The CLI shall display organized input column headers, handling long or malformed names (e.g., "SOME_WHACKY_NAME_FOR_USERID").
+Truncate long names (e.g., "SOME_WHACKY...") with an option to view full names (e.g., internal flag --show-full-headers).
+
+Flag potentially useless data (e.g., all nulls or repetitive values).
+
+FR3.2: The CLI shall provide a preview of sample data for each column to aid mapping decisions.
+Display up to 3 sample rows (e.g., internal --preview-data logic).
+
+FR3.3: The CLI shall support mapping target attributes to source columns with confidence-based suggestions.
+Use fuzzy matching to suggest matches, ordered by confidence.
+
+Allow manual mapping via internal prompt or flag (e.g., --map email=CSV2:email).
+
+FR3.4: The CLI shall display mapping statistics (e.g., "High Confidence: 5, Low Confidence: 2").
+
+FR3.5: The CLI shall support the same categories as the GUI (Users, Groups, Roles, Resources, Relationships).
+
+4.4 Automated Source Detection and Mapping
+FR4.1: The tool shall use fuzzy matching to suggest source columns for target fields, ordered by confidence.
+
+FR4.2: The tool shall organize target fields into categories:
+Users: user_id, first_name, last_name, full_name, username, email, is_active, created_at, updated_at, last_login_at.
+
+Groups: group_id, group_name, group_description.
+
+Roles: role_id, role_name, role_description, permissions.
+
+Resources: resource_id, resource_name, resource_type.
+
+Relationships:
+User Groups: user_id, group_id.
+
+User Roles: user_id, role_id.
+
+Group Roles: group_id, role_id.
+
+User Resources: user_id, resource_id.
+
+Role Resources: role_id, resource_id.
+
+Group Resources: group_id, resource_id.
+
+Group Groups: source_group_id, destination_group_id.
+
+FR4.3: The CLI/GUI shall display target fields with suggested matches, confidence indicators, and sample data.
+
+FR4.4: The CLI/GUI shall allow manual adjustment of mappings and save as an AppMap.
+
+FR4.5: The CLI/GUI shall include search functionality and mapping statistics.
+
+FR4.6: The Create AppMap page shall include a disabled "Use AI Assistant" button as a placeholder for future LLM integration.
+
+4.5 AppMap Storage and Reuse
+FR5.1: AppMaps shall be stored as JSON files in /schemas (e.g., appmap_customer_app.json).
+
+FR5.2: AppMap files shall include input type, file names, column mappings, and the common key.
+
+FR5.3: The tool shall match new inputs to existing AppMaps based on structure.
+
+FR5.4: The CLI/GUI shall allow selection of existing AppMaps or creation of new ones.
+
+4.6 Transition File Management
+FR6.1: Transitioned files shall be stored in /transitions, linked to AppMaps and metadata (e.g., file size, creation date).
+
+FR6.2: The CLI/GUI shall support Download, Delete, and a disabled Deploy action for transitioned files.
+
+FR6.3: The CLI shall provide commands to list, download, and delete transitioned files (e.g., --list-transitions, --download-transition file).
+
+4.7 GUI Requirements
+FR7.1: The GUI shall implement a three-step workflow: Upload, Create AppMap, Transform & Download.
+
+FR7.2: The GUI shall include a Transitions page for managing transitioned files.
+
+FR7.3: The GUI shall support drag-and-drop and file browsing for uploads.
+
+FR7.4: The Create AppMap page shall include a disabled "Use AI Assistant" button.
+
+4.8 Future Scalability (Phase 2 and Beyond)
+FR8.1: The tool shall support automatic detection of new customer uploads in production.
+Monitor a designated directory for new files.
+
+Process familiar datasets using the last AppMap.
+
+FR8.2: The tool shall deploy transformed data to customer tenants via a production backend system.
+Implement a Deploy action to send files to a backend API.
+
+FR8.3: The tool shall support a database backend (e.g., PostgreSQL) for AppMaps and transitioned files in future phases.
+Define schema for Customers, AppMaps, SourceFiles, TransitionFiles, etc.
+
+Use an ORM (e.g., SQLAlchemy) for database access.
+
+4.9 Output Generation
+FR9.1: The tool shall output transformed data exclusively in Excel (.xlsx) format.
+
+FR9.2: The output shall include metadata (e.g., customer name, application name).
+
+5. Non-Functional Requirements
+NFR1: Process up to 100 sheets or CSV files (10,000 rows each) within 5 minutes.
+
+NFR2: CLI commands shall execute within 10 seconds for typical inputs.
+
+NFR3: Run standalone without external hosting.
+
+NFR4: AppMap matching shall complete within 2 seconds for 50 AppMaps.
+
+6. Assumptions
+Input data contains a common key.
+
+Users have Python 3.8+ and a browser.
+
+init.sh handles environment setup and --input flags, with no modifications allowed.
+
+LLM API access will be integrated in a future phase.
+
+7. Proposed Design
+Architecture: Flask-based with CLI and GUI interfaces, using files for storage.
+
+File Structure:
+/schemas: Store AppMaps in JSON.
+
+/transitions: Store transitioned files with metadata.
+
+Process Flow (CLI): Input (via init.sh) → Preview → Map → Transform → Manage Transitions.
+
+8. Development Plan
+Phase 1: CLI Enhancements:
+Enhance input processing and schema flattening, leveraging init.sh.
+
+Improve CLI experience with organized headers and data preview.
+
+Duration: 1.5 weeks.
+
+Phase 2: GUI Development:
+Implement three-step workflow and Transitions page.
+
+Add disabled "Use AI Assistant" button.
+
+Duration: 2.5 weeks.
+
+Phase 3: LLM Integration (Post-GUI):
+Integrate LLM-based AppMap generation with anonymized data.
+
+Duration: 1 week (post-GUI deployment).
+
+Phase 4: Future Scalability:
+Implement automatic dataset processing and deployment.
+
+Transition to database storage if needed.
+
+Duration: TBD (future phase).
+
+9. Testing Requirements
+Test CLI input processing with init.sh and messy headers.
+
+Verify GUI workflow and .xlsx output.
+
+Test future scalability features with mock setups.
+
+10. Risks and Mitigation
+Risk: Dependency on init.sh limits flexibility.
+Mitigation: Use internal logic to handle new features without modifying init.sh.
+
+11. Dependencies
+Python 3.8+, Flask, pandas, fuzzywuzzy, openpyxl (for .xlsx output, managed by init.sh).
+
+12. Deliverables
+Updated codebase, todo.txt, README.md.
+
+Developer Instructions to Enhance CLI
+Overview
+Enhance the CLI version of AppMapper to include input processing (FR1.1, FR1.2), schema flattening (FR2.1, FR2.2, FR2.3), and an improved user experience for messy column headers and data, leveraging the existing init.sh script without modifications. The --input flag is handled by init.sh, and the output will be limited to Excel (.xlsx) format. No new environment modules should be added beyond those managed by init.sh.
+Instructions
+Enhance Input Processing (FR1.1, FR1.2)  
+Integrate with init.sh:
+Assume --input is passed via init.sh and parsed internally.
+
+Add validation within main.py:
+python
+
+import os
+import pandas as pd
+from argparse import ArgumentParser
+
+def validate_file(file_path):
+    if not file_path.endswith((".xlsx", ".csv")):
+        raise ValueError("Only .xlsx and .csv files are supported")
+    return file_path
+
+def read_input_files(input_arg):
+    if not input_arg:
+        raise ValueError("No input file specified via --input")
+    file_path = validate_file(input_arg)
+    if file_path.endswith(".xlsx"):
+        excel_file = pd.ExcelFile(file_path)
+        sheets = excel_file.sheet_names
+        if len(sheets) > 1:
+            print("Available sheets:", sheets)
+            sheet = input("Select a sheet: ") or sheets[0]
+            return [pd.read_excel(file_path, sheet_name=sheet)]
+        return [pd.read_excel(file_path)]
+    return [pd.read_csv(file_path)]
+
+if __name__ == "__main__":
+    parser = ArgumentParser(description="AppMapper CLI")
+    parser.add_argument("--preview-data", action="store_true", help="Preview sample data")
+    parser.add_argument("--show-full-headers", action="store_true", help="Show full column headers")
+    args, unknown = parser.parse_known_args()
+    # Assume init.sh passes --input as an environment variable or first arg
+    input_arg = os.environ.get("INPUT_FILE") or unknown[0] if unknown else None
+    dfs = read_input_files(input_arg)
+
+Commit: git commit -m "Enhance CLI input processing with init.sh integration"
+
+Implement Schema Flattening (FR2.1, FR2.2, FR2.3)  
+Detect Key Columns:
+Add logic:
+python
+
+def detect_key_columns(dfs):
+    key_candidates = []
+    for df in dfs:
+        for col in df.columns:
+            if "id" in col.lower() and df[col].is_unique.all():
+                key_candidates.append(col)
+    return key_candidates[0] if key_candidates else input("Select key column: ")
+
+Flatten Data:
+Merge dataframes:
+python
+
+def flatten_data(dfs, key_column):
+    base_df = dfs[0]
+    for df in dfs[1:]:
+        base_df = base_df.merge(df, on=key_column, how="left", suffixes=("", "_dup"))
+        missing = base_df[key_column].isna().sum()
+        if missing > 0:
+            print(f"Warning: {missing} rows with missing data in key column")
+    return base_df
+
+CLI Integration:
+Add to workflow:
+python
+
+if __name__ == "__main__":
+    dfs = read_input_files(input_arg)
+    key = detect_key_columns(dfs)
+    flattened_df = flatten_data(dfs, key)
+    print("Flattened data shape:", flattened_df.shape)
+
+Commit: git commit -m "Implement schema flattening with key detection"
+
+Improve CLI Experience (FR3.1, FR3.2, FR3.3, FR3.4, FR3.5)  
+Organize and Display Headers:
+Add header display:
+python
+
+def display_headers(dfs):
+    for i, df in enumerate(dfs):
+        print(f"\nFile {i+1} ({os.path.basename(input_arg if i == 0 else 'additional file')}:")
+        for col in df.columns:
+            truncated = col[:20] + "..." if len(col) > 20 else col
+            print(f"  {truncated:20} | Sample: {df[col].head(3).tolist()}")
+            if df[col].isna().all() or len(df[col].unique()) == 1:
+                print(f"    Warning: Potentially useless data (all null or same value)")
+            if args.show_full_headers and len(col) > 20:
+                print(f"    Full name: {col}")
+
+Support Mapping:
+Add mapping logic:
+python
+
+target_attributes = {
+    "Users": ["user_id", "first_name", "last_name", "full_name", "username", "email", "is_active", "created_at", "updated_at", "last_login_at"],
+    "Groups": ["group_id", "group_name", "group_description"],
+    "Roles": ["role_id", "role_name", "role_description", "permissions"],
+    "Resources": ["resource_id", "resource_name", "resource_type"],
+    "Relationships": [
+        ("User Groups", ["user_id", "group_id"]),
+        ("User Roles", ["user_id", "role_id"]),
+        ("Group Roles", ["group_id", "role_id"]),
+        ("User Resources", ["user_id", "resource_id"]),
+        ("Role Resources", ["role_id", "resource_id"]),
+        ("Group Resources", ["group_id", "resource_id"]),
+        ("Group Groups", ["source_group_id", "destination_group_id"])
+    ]
+}
+
+def suggest_mappings(dfs, target_attrs):
+    mappings = {}
+    for category, attrs in target_attrs.items():
+        if isinstance(attrs, list):
+            attrs = [(a, None) for a in attrs]
+        print(f"\n{category}:")
+        for attr, sub_attr in attrs:
+            best_match = None
+            best_confidence = 0
+            for df in dfs:
+                for col in df.columns:
+                    confidence = fuzz.ratio(attr.lower(), col.lower()) / 100
+                    if confidence > best_confidence:
+                        best_confidence = confidence
+                        best_match = col
+            label = "High" if best_confidence > 0.9 else "Good" if best_confidence > 0.7 else "Possible" if best_confidence > 0.5 else "Low"
+            print(f"  {attr}: {best_match} [{label} Confidence]")
+            mappings[attr] = best_match
+    return mappings, {"high": sum(1 for c in mappings.values() if c > 0.9), "good": sum(0.7 <= c <= 0.9 for c in [fuzz.ratio(a.lower(), m.lower())/100 for a, m in mappings.items()]), "possible": sum(0.5 <= c < 0.7 for c in [fuzz.ratio(a.lower(), m.lower())/100 for a, m in mappings.items()]), "low": sum(c < 0.5 for c in [fuzz.ratio(a.lower(), m.lower())/100 for a, m in mappings.items()])}
+
+if args.preview_data:
+    display_headers(dfs)
+mappings, stats = suggest_mappings(dfs, target_attributes)
+print("Mapping Statistics: High: {}, Good: {}, Possible: {}, Low: {}".format(stats["high"], stats["good"], stats["possible"], stats["low"]))
+
+Commit: git commit -m "Enhance CLI experience with header organization and mapping"
+
+Update Output to .xlsx Only (FR9.1)  
+Modify Output Logic:
+Update the transformation output:
+python
+
+import openpyxl
+
+def save_output(df, customer_name, app_name):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "TransformedData"
+    ws.append(df.columns.tolist())
+    for row in df.itertuples(index=False):
+        ws.append(row)
+    output_file = f"appmap_{customer_name}_{app_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    wb.save(output_file)
+    print(f"Output saved as {output_file}")
+    return output_file
+
+if __name__ == "__main__":
+    # ... existing code ...
+    output_file = save_output(flattened_df, "TestCorp", "IdentitySync")
+
+Commit: git commit -m "Update CLI to output .xlsx format only"
+
+Update todo.txt  
+Add under "Phase 1: CLI Enhancements":
+[x] Enhance CLI input processing for Excel and CSV (FR1.1, FR1.2)
+
+[x] Implement schema flattening with key detection (FR2.1, FR2.2, FR2.3)
+
+[x] Improve CLI experience with header organization and mapping (FR3.1-3.5)
+
+[x] Update CLI to output .xlsx format only (FR9.1)
+
+Update "Recent Updates":
+
+- Enhanced CLI with input processing and schema flattening
+- Improved CLI experience for messy headers and data
+- Updated CLI to output .xlsx format only
+
+Add under "Phase 2: GUI Development":
+[ ] Add disabled "Use AI Assistant" button in Create AppMap page
+
+Test and Verify  
+Run ./init.sh --input test.xlsx and test:
+Multi-sheet handling with prompt.
+
+Header display with --preview-data and --show-full-headers.
+
+Mapping suggestions and statistics.
+
+Output as .xlsx file.
+
+Ensure no changes to init.sh are required.
+
+Expected Outcome
+The CLI will support input processing, schema flattening, an enhanced experience with organized headers and data preview, and output exclusively in .xlsx format, all while adhering to init.sh constraints.
+

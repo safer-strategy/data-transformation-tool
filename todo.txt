@@ -1,0 +1,90 @@
+# AppMapper: Custom Application Transformation Tool v1.1.0 Development Checklist
+
+## Initial Setup
+[x] Create v1.1.0-development branch
+[x] Update requirements.txt with existing dependencies (no changes to init.sh)
+[x] Test current v1.0.0 functionality as baseline
+
+## Phase 1: CLI Enhancements
+### Input Processing
+[x] Enhance CLI input processing for Excel and CSV (FR1.1, FR1.2)
+    [x] Integrate with --input flag from init.sh
+    [x] Add validation for .xlsx and .csv files only
+    [x] Implement multi-sheet Excel reading with user prompt for selection
+    [x] Test with single .xlsx file and multiple sheets
+    [x] Test with invalid file types (e.g., .txt)
+
+### Schema Flattening
+[x] Implement schema flattening with key detection (FR2.1, FR2.2, FR2.3)
+    [x] Add logic to detect key columns automatically
+    [x] Implement data consolidation using the detected key
+    [x] Add warning logging for missing or inconsistent data
+    [x] Test flattening with sample data containing a common key
+    [x] Test flattening with missing data
+
+### CLI Experience Improvements
+[x] Improve CLI experience with header organization and mapping (FR3.1-3.5)
+    [x] Display organized input column headers with truncation
+    [x] Add option to show full headers (--show-full-headers)
+    [x] Flag potentially useless data (all nulls or repetitive values)
+    [x] Provide preview of sample data for each column (--preview-data)
+    [x] Support mapping target attributes with confidence-based suggestions
+    [x] Display mapping statistics (e.g., High, Good, Possible, Low confidence)
+    [x] Organize categories (Users, Groups, Roles, Resources, Relationships)
+    [x] Test header display with long/malformed names (e.g., "SOME_WHACKY_NAME_FOR_USERID")
+    [x] Test data preview with sample dataset
+    [x] Test mapping suggestions and statistics
+
+### Output Enhancement
+[x] Update CLI to output .xlsx format only (FR9.1)
+    [x] Modify output logic to use openpyxl for .xlsx
+    [x] Include metadata (customer name, application name) in output
+    [x] Test output with sample flattened data
+    [x] Verify output file is valid .xlsx
+
+### Testing and Verification
+[WIP] Test CLI enhancements end-to-end
+    [x] Run with ./init.sh --input test.xlsx
+    [x] Verify multi-sheet handling
+    [x] Check header organization and useless data flagging
+    [x] Validate mapping suggestions and statistics
+    [ ] Confirm .xlsx output with metadata
+    [ ] Test with messy headers and data
+    [ ] Ensure no changes to init.sh are required
+
+## Phase 2: GUI Development (Pending)
+[ ] Add disabled "Use AI Assistant" button in Create AppMap page
+    [ ] Design and implement button placeholder
+    [ ] Test button is disabled and non-functional
+
+## Phase 3: LLM Integration (Post-GUI)
+[ ] Integrate LLM-based AppMap generation with anonymized data
+    [ ] Implement anonymization logic
+    [ ] Add LLM API integration
+    [ ] Test LLM suggestions with sample data
+
+## Phase 4: Future Scalability (Pending)
+[ ] Implement automatic dataset processing and deployment
+    [ ] Add directory monitoring for new uploads
+    [ ] Implement Deploy action for backend integration
+    [ ] Transition to database storage if needed
+
+## Notes
+- Mark tasks as [x] when complete
+- Use [WIP] for in-progress tasks
+- Update this file with each commit
+- Test backward compatibility throughout
+- Do not modify init.sh; handle all logic internally
+
+## Recent Updates (2025-03-16)
+- Completed CLI enhancements including colored output and progress bars
+- Added interactive prompts and improved error handling
+- Implemented schema flattening with key detection
+- Enhanced output formatting with metadata support
+
+## Next Tasks (Priority Order)
+1. Complete end-to-end testing of CLI enhancements
+2. Verify metadata in .xlsx output
+3. Test with complex, messy data sets
+4. Begin GUI development phase
+5. Plan LLM integration approach
