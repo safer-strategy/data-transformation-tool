@@ -1,10 +1,10 @@
-
 import pandas as pd
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import json
 import hashlib
+from colorama import Fore, Style
 
 logger = logging.getLogger(__name__)
 
@@ -14,125 +14,201 @@ class DataTransformer:
         self.logger = logging.getLogger(__name__)
         self.group_id_map = {}  # Initialize the group_id_map
         self.transformed_data = {}  # Initialize transformed_data as empty dict
+        self.role_id_map = {}  # Initialize the role_id_map
         
         with open(schema_file) as f:
             self.schema = json.load(f)
 
-    def transform_data(self, data: Dict[str, pd.DataFrame], mappings: Dict[str, Dict]) -> Dict[str, pd.DataFrame]:
-        """Transform all data according to mappings."""
+    def transform_data(self, data: Dict[str, pd.DataFrame], mappings: Dict[str, Dict[str, str]]) -> Dict[str, pd.DataFrame]:
+        """Transform all data according to schema rules."""
         transformed_data = {}
         
-        # Transform Users if present
+        # First transform Users if present
         if 'Users' in data:
-            df = data['Users']
-            transformed_df = self.transform_data_tab(df, mappings, 'Users')
-            if transformed_df is not None:
-                transformed_data['Users'] = transformed_df
+            print("  Processing Users...")
+            users_df = self._transform_users(data['Users'])
+            if users_df is not None:
+                transformed_data['Users'] = users_df
+                
+                # Create Roles
+                print("  Processing Roles...")
+                roles_df = self._transform_roles(data.get('Roles', pd.DataFrame()))
+                transformed_data['Roles'] = roles_df
+                
+                # Create User Roles relationships
+                print("  Processing User Roles...")
+                user_roles_df = self._create_user_roles(users_df)
+                transformed_data['User Roles'] = user_roles_df
         
-        # Transform Groups if present
-        if 'Groups' in data:
-            df = data['Groups']
-            transformed_df = self.transform_data_tab(df, mappings, 'Groups')
-            if transformed_df is not None:
-                transformed_data['Groups'] = transformed_df
-        
-        # Transform User Groups only if both Users and Groups are present
-        if 'User Groups' in data and 'Users' in transformed_data and 'Groups' in transformed_data:
-            transformed_df = self.transform_data_tab(data['User Groups'], mappings, 'User Groups')
-            if transformed_df is not None and not transformed_df.empty:
-                transformed_data['User Groups'] = transformed_df
-        
-        # Transform remaining tabs
+        # Process other tabs using mappings
         for tab_name, df in data.items():
-            if tab_name not in ['Users', 'Groups', 'User Groups']:
-                transformed_df = self.transform_data_tab(df, mappings, tab_name)
-                if transformed_df is not None:
-                    transformed_data[tab_name] = transformed_df
+            if tab_name not in ['Users', 'Roles', 'User Roles']:  # Skip already processed tabs
+                print(f"  Processing {tab_name}...")
+                if tab_name in mappings:
+                    transformed_df = self.transform_data_tab(df, tab_name, mappings[tab_name])
+                    if transformed_df is not None:
+                        transformed_data[tab_name] = transformed_df
         
         return transformed_data
 
-    def transform_data_tab(self, df: pd.DataFrame, mappings: Dict[str, Dict], tab_name: str) -> Optional[pd.DataFrame]:
+    def _process_tab(self, df: pd.DataFrame, tab_name: str, transformed_data: Dict, mappings: Dict[str, str]):
+        """Process a single tab through the transformation pipeline."""
+        print(f"\n\033[1;33m► PROCESSING SIGNAL: {tab_name}")
+        print(f"  RECORDS DETECTED: {df.shape[0]}\033[0m")
+        
+        # Clear any existing mappings for this tab
+        if tab_name in self.transformed_data:
+            del self.transformed_data[tab_name]
+        
+        transformed_df = self.transform_data_tab(df, tab_name, mappings)
+        if transformed_df is not None:
+            transformed_data[tab_name] = transformed_df
+            self.transformed_data[tab_name] = transformed_df
+            print(f"\n\033[1;32m► SIGNAL {tab_name} SUCCESSFULLY TRANSFORMED\033[0m")
+
+    def transform_data_tab(self, df: pd.DataFrame, tab_name: str, mappings: Dict[str, str]) -> Optional[pd.DataFrame]:
         """Transform a single data tab according to mappings."""
         try:
-            # Get the mappings for this tab
-            tab_mappings = mappings.get(tab_name, {}).get('mappings', {})
-            if not tab_mappings:
-                logger.warning(f"No mappings found for tab {tab_name}")
+            if tab_name in self.transformed_data:
+                return self.transformed_data[tab_name]
+            
+            if not mappings:
+                print(f"\n{Fore.RED}► ERROR: No mappings found for {tab_name}{Style.RESET_ALL}")
                 return None
 
-            # Create transformed DataFrame with mapped columns
+            print(f"\n{Fore.CYAN}► TRANSFORMING SIGNAL: {tab_name}")
+            print(f"  RECORDS IN TRANSMISSION: {len(df)}{Style.RESET_ALL}")
+            
             transformed_data = {}
-            for target_field, source_field in tab_mappings.items():
-                if source_field in df.columns:
-                    transformed_data[target_field] = df[source_field]
-
-            transformed_df = pd.DataFrame(transformed_data)
-
-            # Apply specific transformations based on tab type
+            
             if tab_name == 'Users':
-                transformed_df = self._transform_users(transformed_df)
-            elif tab_name == 'Groups':
-                transformed_df = self._transform_groups(transformed_df)
-            elif tab_name == 'Roles':
-                transformed_df = self._transform_roles(transformed_df)
-            elif tab_name == 'Resources':
-                transformed_df = self._transform_resources(transformed_df)
+                required_cols = ['user_id', 'username', 'email', 'first_name', 'last_name', 
+                               'full_name', 'is_active', 'created_at', 'updated_at', 'last_login_at']
+                
+                # Copy mapped fields
+                for source_field, target_field in mappings.items():
+                    if source_field in df.columns:
+                        transformed_data[target_field] = df[source_field]
+                        print(f"  ▶ MAPPING: {source_field} → {target_field}")
+
+                # Handle derived fields
+                print(f"\n{Fore.CYAN}► DERIVING ADDITIONAL FIELDS{Style.RESET_ALL}")
+                
+                if 'email' in transformed_data:
+                    if 'user_id' not in transformed_data:
+                        transformed_data['user_id'] = transformed_data['email']
+                        print("  ▶ DERIVED: user_id from email")
+                    
+                    if 'username' not in transformed_data:
+                        transformed_data['username'] = transformed_data['email'].apply(lambda x: x.split('@')[0])
+                        print("  ▶ DERIVED: username from email")
+                
+                if 'full_name' in transformed_data:
+                    if 'first_name' not in transformed_data or 'last_name' not in transformed_data:
+                        names_df = transformed_data['full_name'].str.split(' ', n=1, expand=True)
+                        transformed_data['first_name'] = names_df[0]
+                        transformed_data['last_name'] = names_df[1]
+                        print("  ▶ DERIVED: first_name and last_name from full_name")
+
+                # Initialize missing columns
+                for col in required_cols:
+                    if col not in transformed_data:
+                        transformed_data[col] = None
+                        print(f"  ▶ INITIALIZED: {col}")
+
+                result_df = pd.DataFrame(transformed_data)
+                print(f"\n{Fore.GREEN}► TRANSFORMATION COMPLETE: {len(result_df)} records processed{Style.RESET_ALL}")
+                return result_df
             
+            else:
+                # Handle other tabs normally
+                for target_field, source_field in mappings.items():
+                    if source_field in df.columns:
+                        transformed_data[target_field] = df[source_field]
+                transformed_df = pd.DataFrame(transformed_data)
+                
+                # Apply specific transformations based on tab type
+                if tab_name == 'Groups':
+                    transformed_df = self._transform_groups(transformed_df)
+                elif tab_name == 'Roles':
+                    transformed_df = self._transform_roles(transformed_df)
+                elif tab_name == 'Resources':
+                    transformed_df = self._transform_resources(transformed_df)
+            
+            # Cache the transformed data
+            self.transformed_data[tab_name] = transformed_df
             return transformed_df
-            
+        
         except Exception as e:
-            self.logger.error(f"Error transforming data for tab {tab_name}: {str(e)}")
+            logger.error(f"Error transforming {tab_name}: {str(e)}")
             return None
 
     def _transform_users(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Transform Users tab data."""
-        # Ensure all required columns exist
-        required_cols = ['user_id', 'username', 'email', 'first_name', 'last_name', 'full_name', 'is_active']
-        for col in required_cols:
-            if col not in df.columns:
-                df[col] = None
-
-        # Handle identifiers according to schema rules
-        if df['user_id'].isna().any():
-            # If user_id is missing, try to populate from email or username
-            mask = df['user_id'].isna()
-            df.loc[mask, 'user_id'] = df.loc[mask].apply(
-                lambda row: row['email'] if pd.notna(row['email']) 
-                else (row['username'] if pd.notna(row['username']) else None),
-                axis=1
-            )
-
-        if df['username'].isna().any():
-            # If username is missing, populate from email
-            mask = df['username'].isna()
-            df.loc[mask, 'username'] = df.loc[mask, 'email']
-
-        # Handle name fields
-        if 'first_name' in df.columns and 'last_name' in df.columns:
-            # Create full_name from first_name and last_name if missing
-            mask = df['full_name'].isna() & df['first_name'].notna() & df['last_name'].notna()
-            df.loc[mask, 'full_name'] = df.loc[mask, 'first_name'] + ' ' + df.loc[mask, 'last_name']
-
-        # Transform is_active field - check all possible column names
-        status_columns = ['Active', 'Status', 'IsActive', 'is_active', 'active']
-        status_column = next((col for col in status_columns if col in df.columns), None)
+        """Transform Users tab data according to schema rules."""
+        try:
+            # Create a copy to avoid modifying the original
+            result_df = df.copy()
+            
+            print("  • Processing name fields...")
+            # Handle name fields - split full_name into first_name and last_name
+            if 'full_name' in result_df.columns:
+                name_parts = result_df['full_name'].str.split(n=1, expand=True)
+                result_df['first_name'] = name_parts[0]
+                result_df['last_name'] = name_parts[1].fillna('')
+            
+            print("  • Processing email fields...")
+            # Handle email-based fields
+            if 'email' in result_df.columns:
+                if 'user_id' not in result_df.columns:
+                    result_df['user_id'] = result_df['email']
+                if 'username' not in result_df.columns:
+                    result_df['username'] = result_df['email'].apply(lambda x: str(x).split('@')[0] if pd.notna(x) else None)
+            
+            print("  • Processing datetime fields...")
+            # Convert datetime fields to ISO format
+            datetime_fields = ['created_at', 'updated_at', 'last_login_at']
+            for field in datetime_fields:
+                if field in result_df.columns and result_df[field].notna().any():
+                    result_df[field] = pd.to_datetime(result_df[field]).dt.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+            
+            print("  • Standardizing is_active field...")
+            # Standardize is_active values
+            if 'is_active' in result_df.columns:
+                result_df['is_active'] = result_df['is_active'].map({
+                    'Active': 'Yes',
+                    'Deactivated': 'No',
+                    'Invited': 'No'
+                }).fillna('No')
+            
+            # Define the required column order
+            required_columns = [
+                'user_id',
+                'username',
+                'email',
+                'first_name',
+                'last_name',
+                'full_name',
+                'is_active',
+                'created_at',
+                'updated_at',
+                'last_login_at'
+            ]
+            
+            print("  • Ensuring all required columns exist...")
+            # Ensure all required columns exist
+            for col in required_columns:
+                if col not in result_df.columns:
+                    result_df[col] = None
+            
+            # Reorder columns
+            result_df = result_df[required_columns]
+            
+            print("  • User transformation complete")
+            return result_df
         
-        if status_column:
-            self.logger.info(f"Found status column: {status_column}")
-            self.logger.info(f"Unique status values before transformation: {df[status_column].unique().tolist()}")
-            df['is_active'] = df[status_column].apply(self._transform_boolean_to_yes_no)
-            self.logger.info(f"Unique is_active values after transformation: {df['is_active'].unique().tolist()}")
-        else:
-            self.logger.warning("No status column found, defaulting is_active to 'No'")
-            df['is_active'] = 'No'
-
-        # Convert datetime fields
-        date_fields = ['created_at', 'updated_at', 'last_login_at']
-        for field in date_fields:
-            if field in df.columns:
-                df[field] = pd.to_datetime(df[field], errors='coerce').dt.strftime('%Y-%m-%dT%H:%M:%SZ')
-
-        return df
+        except Exception as e:
+            print(f"  • ERROR in _transform_users: {str(e)}")
+            raise
 
     def _transform_groups(self, df: pd.DataFrame) -> pd.DataFrame:
         """Transform Groups tab data according to schema rules."""
@@ -178,11 +254,31 @@ class DataTransformer:
         return clean_df[COLUMN_ORDER].copy()
 
     def _transform_roles(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Transform Roles tab data."""
-        # If role_id is missing but role_name is present, use role_name as role_id
-        if 'role_id' not in df.columns and 'role_name' in df.columns:
-            df['role_id'] = df['role_name']
-        return df
+        """Transform Roles tab data according to schema rules."""
+        COLUMN_ORDER = ['role_id', 'role_name', 'role_description']
+        
+        # Define default system roles
+        default_roles = [
+            {'role_name': 'Deactivated', 'role_description': 'Auto-generated role for Deactivated'},
+            {'role_name': 'Active', 'role_description': 'Auto-generated role for Active'},
+            {'role_name': 'Invited', 'role_description': 'Auto-generated role for Invited'},
+            {'role_name': 'Declined', 'role_description': 'Auto-generated role for Declined'}
+        ]
+        
+        # Create DataFrame with default roles
+        roles_df = pd.DataFrame(default_roles)
+        
+        # Add role_id as 1-based index
+        roles_df['role_id'] = range(1, len(roles_df) + 1)
+        
+        # Update role_id_map
+        self.role_id_map = {row['role_name']: row['role_id'] 
+                            for _, row in roles_df.iterrows()}
+        
+        logger.info(f"Created {len(self.role_id_map)} role ID mappings")
+        logger.debug(f"Role mappings: {dict(list(self.role_id_map.items()))}")
+        
+        return roles_df[COLUMN_ORDER]
 
     def _transform_resources(self, df: pd.DataFrame) -> pd.DataFrame:
         """Transform Resources tab data."""
@@ -226,28 +322,19 @@ class DataTransformer:
         
         value_str = str(value).lower().strip()
         
-        # Values that mean "Yes"
         active_values = {
-            'true', '1', 'yes', 'y', 'active', 'enabled', 't',
-            'invited'  # Adding 'invited' as an active status
+            'true', '1', 'yes', 'y', 'active', 'enabled', 't', 'invited'
         }
         
-        # Values that mean "No"
         inactive_values = {
-            'false', '0', 'no', 'n', 'inactive', 'disabled', 'f',
-            'deactivated'  # Adding 'deactivated' as an inactive status
+            'false', '0', 'no', 'n', 'inactive', 'disabled', 'f', 'deactivated'
         }
-        
-        self.logger.debug(f"Processing status value: '{value}'")
         
         if value_str in active_values:
-            self.logger.debug(f"Matched active value: '{value}' → 'Yes'")
             return 'Yes'
         elif value_str in inactive_values:
-            self.logger.debug(f"Matched inactive value: '{value}' → 'No'")
             return 'No'
         
-        # Log unmatched values
         self.logger.warning(f"Unmatched status value '{value}' defaulting to 'No'")
         return 'No'
 
@@ -416,3 +503,266 @@ class DataTransformer:
                 logging.debug(f"{name} first few rows:\n{df.head()}")
 
         return organized_data
+
+    def save_transformed_data(self, data: Dict[str, pd.DataFrame], output_path: str) -> None:
+        """Save transformed data to Excel file."""
+        try:
+            with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+                for tab_name, df in data.items():
+                    if df is not None and not df.empty:
+                        # Ensure all required columns are present
+                        if tab_name == 'Users':
+                            required_cols = ['user_id', 'username', 'email', 'first_name', 
+                                          'last_name', 'full_name', 'is_active', 
+                                          'created_at', 'updated_at', 'last_login_at']
+                            for col in required_cols:
+                                if col not in df.columns:
+                                    df[col] = None
+                            df = df[required_cols]  # Reorder columns
+                    
+                        df.to_excel(writer, sheet_name=tab_name, index=False)
+                        self.logger.info(f"Saved {len(df)} records to {tab_name} sheet")
+        
+            self.logger.info(f"Successfully saved transformed data to {output_path}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error saving transformed data: {str(e)}")
+            return False
+
+    def _display_field_alignments(self, df: pd.DataFrame, tab_name: str, mappings: Dict):
+        """Display current field alignments with sample values."""
+        print(f"\n{Fore.CYAN}> CURRENT FIELD ALIGNMENTS FOR {tab_name}")
+        print("=" * 60 + f"{Style.RESET_ALL}\n")
+        
+        current_mappings = mappings[tab_name].get('mappings', {})
+        
+        for idx, column in enumerate(df.columns, 1):
+            target = current_mappings.get(column, 'unmapped')
+            
+            # Get sample values
+            sample_values = df[column].dropna().head(3).tolist()
+            samples_str = f"[{', '.join(str(x) for x in sample_values)}]"
+            
+            # Color coding
+            if target == 'unmapped':
+                mapping_color = Fore.RED
+            else:
+                mapping_color = Fore.GREEN
+            
+            print(f"{Fore.WHITE}{idx}. {column} {mapping_color}→ {target}")
+            print(f"   Sample values: {Fore.YELLOW}{samples_str}{Style.RESET_ALL}")
+
+    def _display_options_menu(self):
+        """Display the options menu in fixed-width format."""
+        print(f"\n{Fore.CYAN}╔══════════════════ ALIGNMENT OPTIONS ══════════════════╗")
+        print("║ 1-N) Select field number to modify mapping            ║")
+        print("║ v) Validate mappings                                  ║")
+        print("║ c) Continue with current mappings                     ║")
+        print("║ r) Reset all mappings                                 ║")
+        print("║ s) Skip this tab                                      ║")
+        print(f"╚════════════════════════════════════════════════════════╝{Style.RESET_ALL}")
+        print(f"\n{Fore.CYAN}► ENTER COMMAND: {Style.RESET_ALL}", end='', flush=True)
+
+    def _interactive_mapping_modification(self, df: pd.DataFrame, tab_name: str, mappings: Dict[str, Dict]) -> str:
+        """Handle interactive mapping modifications."""
+        while True:
+            self._display_options_menu()
+            command = input("\n> ENTER COMMAND: ").strip().lower()
+            
+            if command == 'r':
+                # Reset mappings without regenerating
+                mappings[tab_name]['mappings'] = {}
+                mappings[tab_name]['validated'] = False
+                print("\n╔════════════════════ RESET COMPLETE ═══════════════════╗")
+                print("║ All mappings have been cleared                        ║")
+                print("╚════════════════════════════════════════════════════════╝")
+                continue
+            
+            elif command == 'c':
+                if not mappings[tab_name]['mappings']:
+                    print("\n╔════════════════════ WARNING ══════════════════════════╗")
+                    print("║ No mappings defined! Please map at least one field.    ║")
+                    print("╚════════════════════════════════════════════════════════╝")
+                    continue
+                return 'continue'
+            
+            elif command == 's':
+                return 'skip'
+            
+            elif command == 'v':
+                # Add validation logic here
+                mappings[tab_name]['validated'] = True
+                continue
+            
+            elif command.isdigit():
+                field_num = int(command)
+                if 1 <= field_num <= len(df.columns):
+                    self._modify_field_mapping(df, tab_name, field_num - 1, mappings)
+                else:
+                    print("\nInvalid field number. Please try again.")
+                continue
+            
+            else:
+                print("\nInvalid command. Please try again.")
+                continue
+
+    def _validate_mappings(self, df: pd.DataFrame, tab_name: str, mappings: Dict, show_results: bool = False) -> bool:
+        """Validate current mappings against schema rules."""
+        if tab_name == "Users":
+            # Initialize mappings if not present
+            if tab_name not in mappings:
+                mappings[tab_name] = {'mappings': {}}
+            
+            current_mappings = mappings[tab_name].get('mappings', {})
+            
+            # Auto-map missing required fields with default values
+            if 'user_id' not in current_mappings:
+                current_mappings['user_id'] = 'email'  # Use email as user_id
+            
+            if 'username' not in current_mappings:
+                current_mappings['username'] = 'email'  # Use email as username
+            
+            if 'first_name' not in current_mappings and 'last_name' not in current_mappings:
+                if 'full_name' in current_mappings:
+                    # Split full_name into first_name and last_name
+                    current_mappings['first_name'] = 'full_name'
+                    current_mappings['last_name'] = 'full_name'
+        
+            # Update the mappings
+            mappings[tab_name]['mappings'] = current_mappings
+        
+            if show_results:
+                print("\n✓ Mappings configured:")
+                for target, source in current_mappings.items():
+                    print(f"  {source} → {target}")
+        
+            return True
+        
+        return True
+
+    def _modify_field_mapping(self, df: pd.DataFrame, tab_name: str, field_num: int, mappings: Dict):
+        """Modify mapping for a specific field."""
+        columns = list(df.columns)
+        current_field = columns[field_num]
+        
+        print(f"\n{Fore.CYAN}Modifying mapping for: {Fore.WHITE}{current_field}")
+        print(f"{Fore.CYAN}Available target fields:{Style.RESET_ALL}")
+        
+        if tab_name == "Users":
+            target_fields = ['user_id', 'username', 'email', 'first_name', 'last_name', 
+                            'full_name', 'is_active', 'created_at', 'updated_at', 'last_login_at']
+        else:
+            target_fields = columns
+        
+        for idx, field in enumerate(target_fields, 1):
+            print(f"{Fore.WHITE}{idx}) {field}{Style.RESET_ALL}")
+        
+        choice = input(f"\n{Fore.CYAN}Select target field number (or 'b' to go back): {Style.RESET_ALL}")
+        if choice.isdigit() and 1 <= int(choice) <= len(target_fields):
+            new_target = target_fields[int(choice) - 1]
+            mappings[tab_name]['mappings'][current_field] = new_target
+            print(f"\n{Fore.GREEN}Mapped {current_field} → {new_target}{Style.RESET_ALL}")
+
+    def _reset_mappings(self, df: pd.DataFrame, tab_name: str, mappings: Dict) -> Dict:
+        """Reset mappings to empty state."""
+        print(f"\n{Fore.YELLOW}╔════════════════════ RESET INITIATED ═══════════════════╗")
+        
+        # Completely clear the mappings for this tab
+        mappings[tab_name] = {
+            'mappings': {},
+            'validated': False
+        }
+        
+        print(f"║ ✓ All mappings cleared                                   ║")
+        print(f"╚════════════════════════════════════════════════════════╝{Style.RESET_ALL}")
+        
+        return mappings
+
+    def _display_current_mappings(self, df: pd.DataFrame, mappings: Dict[str, str]):
+        """Display current mappings with sample data."""
+        print(f"\n{Fore.CYAN}Current Field Alignments{Style.RESET_ALL}")
+        print("=" * 60)
+
+        for idx, (column, target) in enumerate(mappings.items(), 1):
+            # Get sample values
+            samples = df[column].dropna().unique()[:3].tolist()
+            samples_str = ", ".join(str(s) for s in samples)
+            
+            # Determine mapping color based on whether it's mapped
+            mapping_color = Fore.GREEN if target else Fore.RED
+            target_display = target if target else "unmapped"
+            
+            # Display mapping with consistent formatting
+            print(f"\n{Fore.WHITE}{idx}. {column} {mapping_color}→ {target_display}{Style.RESET_ALL}")
+            print(f"   Sample values: {Fore.YELLOW}[{samples_str}]{Style.RESET_ALL}")
+
+    def _modify_mapping(self, current_field: str, df: pd.DataFrame, tab_name: str, mappings: Dict[str, Dict]) -> None:
+        """Handle modification of a single mapping."""
+        print(f"\n{Fore.CYAN}Modifying mapping for: {current_field}{Style.RESET_ALL}")
+        
+        # Get available target fields
+        if tab_name == 'Users':
+            target_fields = ['user_id', 'username', 'email', 'first_name', 'last_name',
+                            'full_name', 'is_active', 'created_at', 'updated_at', 'last_login_at']
+        else:
+            target_fields = list(df.columns)
+        
+        print(f"\n{Fore.CYAN}Available target fields:{Style.RESET_ALL}")
+        for idx, field in enumerate(target_fields, 1):
+            print(f"{Fore.WHITE}{idx}) {field}{Style.RESET_ALL}")
+        
+        print(f"\n{Fore.CYAN}Select target field number (or 'b' to go back):{Style.RESET_ALL} ", end='')
+        choice = input().strip().lower()
+        
+        if choice == 'b':
+            return
+        
+        if choice.isdigit() and 1 <= int(choice) <= len(target_fields):
+            new_target = target_fields[int(choice) - 1]
+            mappings[tab_name]['mappings'][current_field] = new_target
+            print(f"\n{Fore.GREEN}✓ Mapped {current_field} → {new_target}{Style.RESET_ALL}")
+            input("\nPress Enter to continue...")
+
+    def _extract_roles(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Extract roles from the dataset."""
+        # Extract unique roles from is_active field if it contains role information
+        roles = []
+        if 'is_active' in df.columns:
+            roles.extend(df['is_active'].unique())
+        
+        # Create roles DataFrame
+        roles_df = pd.DataFrame({
+            'role_id': roles,
+            'role_name': roles,
+            'role_description': [f"Auto-generated role for {role}" for role in roles]
+        })
+        
+        return roles_df
+
+    def _create_user_roles(self, users_df: pd.DataFrame) -> pd.DataFrame:
+        """Create user-role relationships based on user status."""
+        user_roles = []
+        
+        for _, user in users_df.iterrows():
+            status = str(user.get('is_active', '')).strip()
+            user_id = user['user_id']
+            
+            # Map Yes/No to Active/Deactivated
+            if status.lower() == 'yes':
+                role_name = 'Active'
+            elif status.lower() == 'no':
+                role_name = 'Deactivated'
+            else:
+                # Handle other statuses (Invited, Declined) if present
+                role_name = status if status in self.role_id_map else 'Deactivated'
+            
+            role_id = self.role_id_map.get(role_name)
+            if role_id is not None:
+                user_roles.append({
+                    'user_id': user_id,
+                    'role_id': role_id
+                })
+            else:
+                logger.warning(f"No role_id found for status: {status}")
+        
+        return pd.DataFrame(user_roles)

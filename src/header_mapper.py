@@ -29,9 +29,10 @@ def print_mapping(target: str, source: str, is_unmapped: bool = False):
 logger = logging.getLogger(__name__)
 
 class HeaderMapper:
-    def __init__(self, schema_file: str):
+    def __init__(self, schema_file: str, auto_mapping_enabled: bool = True):
         self.schema_file = schema_file
         self.logger = logging.getLogger(__name__)
+        self.auto_mapping_enabled = auto_mapping_enabled
         
         # Load the schema
         try:
@@ -81,6 +82,9 @@ class HeaderMapper:
 
     def map_headers(self, headers: List[str], tab_name: str) -> Dict[str, str]:
         """Map input headers to schema fields."""
+        if not self.auto_mapping_enabled:
+            return {}  # Return empty dictionary when auto-mapping is disabled
+        
         tab_schema = self.schema.get(tab_name)
         if not tab_schema:
             # Special handling for User Groups tab
@@ -335,11 +339,17 @@ class HeaderMapper:
         """Get truly mandatory fields that cannot be derived."""
         tab_schema = self.schema.get(tab_name, {})
         
-        # Special cases where fields can be derived
+        # Define fields that can be derived from other fields
         derivable_fields = {
-            'Groups': {'group_id'},  # group_id can be derived from group_name
-            'Roles': {'role_id'},    # role_id can be derived from role_name
-            'Resources': {'resource_id'}  # resource_id can be derived from resource_name
+            'Users': {
+                'user_id',     # Can be derived from email
+                'username',    # Can be derived from email
+                'first_name',  # Can be derived from full_name
+                'last_name'    # Can be derived from full_name
+            },
+            'Groups': {'group_id'},  # Can be derived from group_name
+            'Roles': {'role_id'},    # Can be derived from role_name
+            'Resources': {'resource_id'}  # Can be derived from resource_name
         }
         
         # Get all mandatory fields from schema
@@ -356,82 +366,95 @@ class HeaderMapper:
 
     def start_over_mapping(self, input_headers: List[str], tab_name: str, preview_data: pd.DataFrame) -> Dict[str, str]:
         """Start the mapping process over from scratch."""
-        print("\nStarting mapping process over...")
+        clear_screen()
         
+        print(f"\n{Fore.YELLOW}╔════════════════════ RESET INITIATED ═══════════════════╗")
+        print("║ All mappings have been cleared                          ║")
+        print("╚════════════════════════════════════════════════════════╝")
+        
+        # Clear all mappings for this tab
+        if tab_name in self.saved_mappings:
+            del self.saved_mappings[tab_name]
+        
+        # Initialize empty mappings
         mappings = {}
+        
+        # Get schema for this tab
         tab_schema = self.schema.get(tab_name, {})
         valid_fields = set(tab_schema.keys())
         
-        # Get unmapped mandatory fields first
+        # Get unmapped mandatory fields that cannot be derived
         mandatory_fields = self.get_mandatory_fields(tab_name)
-        mapped_fields = set()
+        
+        input("\nPress Enter to begin interactive mapping...")
+        clear_screen()
 
-        # First, handle mandatory fields
-        print("\nMapping mandatory fields:")
-        for mandatory_field in mandatory_fields:
-            if mandatory_field not in mapped_fields:
-                self._map_single_field(mandatory_field, input_headers, preview_data, mappings, tab_schema)
-                if mandatory_field in [v for v in mappings.values()]:
-                    mapped_fields.add(mandatory_field)
+        # Start interactive mapping process
+        return self._interactive_mapping_flow(input_headers, tab_name, preview_data, valid_fields, mandatory_fields)
 
-        # Then handle optional fields that are in the schema
-        print("\nMapping optional fields:")
+    def _interactive_mapping_flow(self, input_headers: List[str], tab_name: str, 
+                                preview_data: pd.DataFrame, valid_fields: Set[str],
+                                mandatory_fields: Set[str]) -> Dict[str, str]:
+        """Interactive mapping flow for fields."""
+        mappings = {}
+        
+        print(f"\n{Fore.CYAN}Starting mapping process for {tab_name}{Style.RESET_ALL}")
+        
+        # First map mandatory fields
+        if mandatory_fields:
+            print(f"\n{Fore.CYAN}Mapping mandatory fields:{Style.RESET_ALL}")
+            for field in mandatory_fields:
+                mapped = self._map_single_field(field, input_headers, preview_data, mappings, tab_schema)
+                if not mapped:
+                    print(f"{Fore.YELLOW}Note: '{field}' not mapped - will need to be derived{Style.RESET_ALL}")
+        
+        # Then map optional fields
+        print(f"\n{Fore.CYAN}Mapping optional fields:{Style.RESET_ALL}")
         optional_fields = valid_fields - mandatory_fields
         for field in optional_fields:
-            if field not in mapped_fields:
-                self._map_single_field(field, input_headers, preview_data, mappings, tab_schema)
-
+            self._map_single_field(field, input_headers, preview_data, mappings, tab_schema)
+        
         return mappings
 
     def _map_single_field(self, target_field: str, input_headers: List[str], 
                          preview_data: pd.DataFrame, mappings: Dict[str, str],
-                         tab_schema: Dict) -> None:
-        """Handle mapping for a single field."""
-        # Skip if field is already mapped
-        if target_field in mappings.values():
-            return
-
-        print(f"\nMapping for field: '{target_field}'")
+                         tab_schema: Dict) -> bool:
+        """Handle mapping for a single field. Returns True if mapping was successful."""
+        print(f"\nMapping field: {target_field}")
         
-        # Get potential matches based on schema synonyms
-        potential_matches = []
-        field_props = tab_schema[target_field]
-        field_synonyms = field_props.get('synonyms', [])
-        
-        for header in input_headers:
-            if header in mappings:  # Skip already mapped headers
-                continue
-            
-            score = max(
-                self.calculate_match_score(header.lower(), syn.lower())
-                for syn in field_synonyms + [target_field]
-            )
-            if score >= 60:
-                potential_matches.append((header, score))
-        
-        potential_matches.sort(key=lambda x: x[1], reverse=True)
+        # Get potential matches using fuzzy matching
+        matches = process.extract(target_field, input_headers, limit=len(input_headers))
+        potential_matches = [(header, score) for header, score in matches if score > 50]
         
         if potential_matches:
-            print("\nPossible matches:")
+            print("\nPotential matches:")
             for idx, (header, score) in enumerate(potential_matches, 1):
-                print(f"{idx}) {header} ({score}%)")
-                if header in preview_data:
+                print(f"{idx}) {header} (match score: {score}%)")
+                if header in preview_data.columns:
                     sample_values = preview_data[header].dropna().unique()[:3].tolist()
                     print(f"   Sample values: {sample_values}")
+        else:
+            print("No potential matches found")
         
-            print("\nOptions:")
-            print("1-N) Select a header")
-            print("s) Skip this field")
-            
-            choice = input("Choose option (1-N or s): ")
-            if choice.lower() != 's':
-                try:
-                    idx = int(choice)
-                    if 1 <= idx <= len(potential_matches):
-                        header = potential_matches[idx-1][0]
-                        mappings[header] = target_field
-                except ValueError:
-                    pass
+        print("\nOptions:")
+        print("1-N) Select a header")
+        print("s) Skip this field")
+        
+        choice = input("Choose option (1-N or s): ").lower().strip()
+        
+        if choice == 's':
+            return False
+        
+        try:
+            idx = int(choice)
+            if 1 <= idx <= len(potential_matches):
+                header = potential_matches[idx-1][0]
+                mappings[header] = target_field
+                return True
+        except ValueError:
+            pass
+        
+        return False
 
     def print_mappings_preview(self, mappings: Dict[str, str], data: Dict[str, pd.DataFrame]) -> None:
         """Display current mappings with sample data."""

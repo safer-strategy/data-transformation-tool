@@ -15,6 +15,10 @@ from data_transformer import DataTransformer
 from validator import Validator  # Change this import to use the correct class
 from reader import Reader
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Initialize colorama
 init(strip=False)  # Allow color stripping based on --no-color
 
@@ -23,6 +27,21 @@ def print_banner():
     print("║    AMT-8000 Power Up Successful       ║")
     print("╚════════════════════════════════════════╝")
     print("\n")
+
+def read_file(file_path: Path) -> pd.DataFrame:
+    """Read Excel or CSV file with proper engine specification."""
+    try:
+        if file_path.suffix.lower() == '.xlsx':
+            return pd.read_excel(file_path, engine='openpyxl')
+        elif file_path.suffix.lower() == '.xls':
+            return pd.read_excel(file_path, engine='xlrd')
+        elif file_path.suffix.lower() == '.csv':
+            return pd.read_csv(file_path)
+        else:
+            raise ValueError(f"Unsupported file format: {file_path.suffix}")
+    except Exception as e:
+        logger.error(f"Error reading file {file_path}: {str(e)}")
+        raise
 
 class AMT8000CLI:
     def __init__(self, no_color: bool = False, page_size: int = 5):
@@ -78,6 +97,19 @@ class AMT8000CLI:
         self.print_styled(f"  {self.mission_statement}", Fore.GREEN)
         time.sleep(0.5)
 
+    def scan_directory(self, path: Path) -> List[Path]:
+        """Scan directory for valid input files."""
+        valid_extensions = {'.xlsx', '.csv'}
+        files = []
+        
+        for file in path.glob('*'):
+            if file.is_file() and file.suffix.lower() in valid_extensions:
+                # Skip temporary Excel files
+                if not file.name.startswith('~$'):
+                    files.append(file)
+        
+        return sorted(files)
+
     def scan_phase(self, directory: str) -> List[Path]:
         """Scan directory for input files and display sample data."""
         self.print_styled("\n> INITIATING DIRECTORY SCAN", Fore.CYAN)
@@ -87,9 +119,7 @@ class AMT8000CLI:
             self.print_styled(f"> ERROR: Directory {directory} not found", Fore.RED)
             return []
             
-        files = []
-        for ext in ['.xlsx', '.csv']:
-            files.extend(list(path.glob(f'*{ext}')))
+        files = self.scan_directory(path)
         
         if not files:
             self.print_styled(f"> NO VALID INPUT SIGNALS DETECTED IN: {path}", Fore.RED)
@@ -412,6 +442,7 @@ def main():
         sys.exit(1)
     except Exception as e:
         cli.print_styled(f"\n> CRITICAL ERROR: {str(e)}", Fore.RED)
+        logger.exception("Critical error occurred")
         sys.exit(1)
 
 if __name__ == "__main__":

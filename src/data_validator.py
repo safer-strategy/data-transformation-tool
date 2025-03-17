@@ -17,38 +17,74 @@ class DataValidator:
         invalid_data = {}
 
         for tab_name, df in data.items():
+            print(f"\n{'='*50}")
+            print(f"Processing {tab_name}")
+            print(f"{'='*50}")
+            print(f"Total records: {len(df)}")
+            
             try:
-                self.logger.info(f"Validating {tab_name} with {len(df)} records")
-                
-                if tab_name == "Users":
-                    valid_mask, reasons = self._validate_users(df)
-                elif tab_name == "Groups":
-                    valid_mask, reasons = self._validate_groups(df)
-                elif tab_name == "User Groups":
-                    valid_mask, reasons = self._validate_user_groups(df)
-                else:
-                    valid_mask, reasons = self._validate_relationship_tab(df, tab_name)
+                if df.empty:
+                    print(f"\nTab {tab_name} is empty, skipping validation")
+                    continue
 
+                valid_mask, reasons = self._validate_tab(df, tab_name)
+                
+                # Display validation results
+                if reasons:  # Only show if there are validation messages
+                    print("\nValidation Results:\n")
+                    for reason in reasons:
+                        print(f"- {reason}")
+                
                 valid_records = df[valid_mask]
                 invalid_records = df[~valid_mask]
-
-                if not valid_records.empty:
+                
+                print(f"\nValidation Summary for {tab_name}:")
+                print(f"- Total records: {len(df)}")
+                print(f"- Valid records: {len(valid_records)}")
+                print(f"- Invalid records: {len(invalid_records)}")
+                
+                if len(valid_records) > 0:
                     valid_data[tab_name] = valid_records
-                if not invalid_records.empty:
+                if len(invalid_records) > 0:
                     invalid_data[tab_name] = invalid_records
 
-                # Log validation results
-                self.logger.info(f"Validation results for {tab_name}:")
-                self.logger.info(f"- Valid records: {len(valid_records)}")
-                self.logger.info(f"- Invalid records: {len(invalid_records)}")
-                for reason in reasons:
-                    self.logger.info(f"- {reason}")
-
             except Exception as e:
-                self.logger.error(f"Error validating {tab_name}: {str(e)}")
+                print(f"Error validating {tab_name}: {str(e)}")
                 raise
 
         return valid_data, invalid_data
+
+    def _validate_users(self, df: pd.DataFrame) -> Dict:
+        """Validate users tab with detailed output."""
+        results = {}
+        
+        print("\n► ANALYZING FIELD STRUCTURE")
+        print("  ═════════════════════════")
+        print(f"  • DETECTED FIELDS: {', '.join(df.columns.tolist())}")
+        
+        # Check for user_id column (case-insensitive)
+        user_id_cols = [col for col in df.columns if col.lower() == 'user_id']
+        email_cols = [col for col in df.columns if col.lower() == 'email']
+        
+        print("\n► IDENTIFIER ANALYSIS")
+        print("  ══════════════════")
+        print(f"  • USER ID FIELDS: {', '.join(user_id_cols)}")
+        print(f"  • EMAIL FIELDS: {', '.join(email_cols)}")
+        
+        # Identifier validation
+        identifier_mask = pd.Series(False, index=df.index)
+        
+        if user_id_cols:
+            identifier_mask |= df[user_id_cols[0]].notna()
+        if email_cols:
+            identifier_mask |= df[email_cols[0]].notna()
+        
+        missing_identifier_count = (~identifier_mask).sum()
+        results['identifier'] = (identifier_mask, [
+            f"MISSING IDENTIFIERS IN {missing_identifier_count} RECORDS"
+        ])
+
+        return results
 
     def _validate_user_identifier(self, df: pd.DataFrame) -> Tuple[pd.Series, list]:
         """Validate user identifier fields."""
