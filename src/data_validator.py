@@ -1,6 +1,6 @@
 import pandas as pd
 import logging
-from typing import Dict, Tuple, Any
+from typing import Dict, Tuple, Any, List
 
 # Set logging level to DEBUG
 logging.basicConfig(level=logging.DEBUG)
@@ -17,77 +17,35 @@ class DataValidator:
         invalid_data = {}
 
         for tab_name, df in data.items():
-            print(f"\n{'='*50}")
-            print(f"Processing {tab_name}")
-            print(f"{'='*50}")
-            print(f"Total records: {len(df)}")
-
-            if df.empty:
-                continue
-
             try:
+                self.logger.info(f"Validating {tab_name} with {len(df)} records")
+                
                 if tab_name == "Users":
-                    # Ensure required columns exist before validation
-                    required_cols = ['user_id', 'username', 'email', 'first_name', 'last_name', 'full_name']
-                    missing_cols = [col for col in required_cols if col not in df.columns]
-                    if missing_cols:
-                        for col in missing_cols:
-                            df[col] = None
-                    
-                    # Perform each validation separately and collect results
-                    validation_results = {
-                        'identifier': self._validate_user_identifier(df),
-                        'name': self._validate_user_name(df),
-                        'is_active': self._validate_is_active(df),
-                        'dates': self._validate_dates(df)
-                    }
-
-                    # Combine all validation masks
-                    valid_mask = pd.Series(True, index=df.index)
-                    all_reasons = []
-                    
-                    for check_name, (mask, reasons) in validation_results.items():
-                        valid_mask &= mask
-                        if reasons:
-                            print(f"\n{check_name.upper()} Validation:")
-                            for reason in reasons:
-                                print(f"- {reason}")
-                            all_reasons.extend(reasons)
-
-                    # Print detailed statistics for invalid records
-                    invalid_records = df[~valid_mask]
-                    if not invalid_records.empty:
-                        print(f"\nINVALID RECORDS SUMMARY:")
-                        print(f"Total invalid records: {len(invalid_records)}")
-                        
-                        print("\nColumn-wise null value count:")
-                        for col in invalid_records.columns:
-                            null_count = invalid_records[col].isna().sum()
-                            print(f"- {col}: {null_count} null values")
-                        
-                        print("\nSample of invalid records (first 5):")
-                        print(invalid_records.head().to_string())
-
-                elif tab_name in ["Groups", "Roles", "Resources"]:
-                    valid_mask, reasons = self._validate_entity_tab(df, tab_name)
+                    valid_mask, reasons = self._validate_users(df)
+                elif tab_name == "Groups":
+                    valid_mask, reasons = self._validate_groups(df)
+                elif tab_name == "User Groups":
+                    valid_mask, reasons = self._validate_user_groups(df)
                 else:
                     valid_mask, reasons = self._validate_relationship_tab(df, tab_name)
 
-                # No need to realign the mask since it's already created with the correct index
-                valid_records = df.loc[valid_mask]
-                invalid_records = df.loc[~valid_mask]
+                valid_records = df[valid_mask]
+                invalid_records = df[~valid_mask]
 
-                print(f"\nValidation Summary for {tab_name}:")
-                print(f"- Total records: {len(df)}")
-                print(f"- Valid records: {len(valid_records)}")
-                print(f"- Invalid records: {len(invalid_records)}")
-
-                valid_data[tab_name] = valid_records
+                if not valid_records.empty:
+                    valid_data[tab_name] = valid_records
                 if not invalid_records.empty:
                     invalid_data[tab_name] = invalid_records
 
+                # Log validation results
+                self.logger.info(f"Validation results for {tab_name}:")
+                self.logger.info(f"- Valid records: {len(valid_records)}")
+                self.logger.info(f"- Invalid records: {len(invalid_records)}")
+                for reason in reasons:
+                    self.logger.info(f"- {reason}")
+
             except Exception as e:
-                print(f"Error validating {tab_name}: {str(e)}")
+                self.logger.error(f"Error validating {tab_name}: {str(e)}")
                 raise
 
         return valid_data, invalid_data
@@ -194,4 +152,35 @@ class DataValidator:
         # Perform validations and update mask
         # ... your validation logic here ...
         
+        return valid_mask, reasons
+
+    def _validate_user_groups(self, df: pd.DataFrame) -> Tuple[pd.Series, List[str]]:
+        """Validate User Groups relationship data."""
+        valid_mask = pd.Series(True, index=df.index)
+        reasons = []
+
+        # Check required fields
+        required_fields = ['user_id', 'group_id']
+        missing_fields = [field for field in required_fields if field not in df.columns]
+        
+        if missing_fields:
+            valid_mask = pd.Series(False, index=df.index)
+            reasons.append(f"Missing required fields: {', '.join(missing_fields)}")
+            return valid_mask, reasons
+
+        # Check for null values
+        for field in required_fields:
+            null_mask = df[field].isna()
+            if null_mask.any():
+                valid_mask &= ~null_mask
+                count = null_mask.sum()
+                reasons.append(f"Found {count} records with null {field}")
+
+        # Check for duplicate relationships
+        duplicates = df.duplicated(subset=['user_id', 'group_id'], keep='first')
+        if duplicates.any():
+            valid_mask &= ~duplicates
+            count = duplicates.sum()
+            reasons.append(f"Found {count} duplicate user-group relationships")
+
         return valid_mask, reasons

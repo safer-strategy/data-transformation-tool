@@ -7,6 +7,24 @@ from typing import List, Dict, Tuple, Set
 import pandas as pd
 from difflib import SequenceMatcher
 import yaml
+from colorama import Fore, Style, init
+
+# Initialize colorama
+init()
+
+def clear_screen():
+    """Clear the terminal screen."""
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+def print_header(text: str):
+    """Print a formatted header."""
+    print(f"\n{Fore.CYAN}{text}{Style.RESET_ALL}")
+    print(Fore.CYAN + "=" * len(text) + Style.RESET_ALL)
+
+def print_mapping(target: str, source: str, is_unmapped: bool = False):
+    """Print a single mapping with color."""
+    source_color = Fore.YELLOW if is_unmapped else Fore.GREEN
+    print(f"{Fore.WHITE}'{target}' ← {source_color}'{source}'{Style.RESET_ALL}")
 
 logger = logging.getLogger(__name__)
 
@@ -61,22 +79,91 @@ class HeaderMapper:
         except Exception as e:
             self.logger.error(f"Error saving mappings: {e}")
 
-    def map_headers(self, input_headers: List[str], tab_name: str) -> Dict[str, str]:
-        """Automatically map headers based on schema only."""
+    def map_headers(self, headers: List[str], tab_name: str) -> Dict[str, str]:
+        """Map input headers to schema fields."""
+        tab_schema = self.schema.get(tab_name)
+        if not tab_schema:
+            # Special handling for User Groups tab
+            if tab_name.lower().replace(" ", "") == "usergroups":
+                # Use predefined mappings for User Groups
+                mappings = {
+                    'User ID': 'user_id',
+                    'Group': 'group_id'  # This will be transformed to actual group_id later
+                }
+                return {header: target for header, target in mappings.items() 
+                       if header in headers}
+            else:
+                self.logger.warning(f"No schema found for tab {tab_name}")
+                return {}
+        
         mappings = {}
         
         # Get schema for this tab
         tab_schema = self.schema.get(tab_name, {})
-        valid_fields = set(tab_schema.keys())  # Only fields defined in schema
+        if not tab_schema:
+            self.logger.warning(f"No schema found for tab {tab_name}")
+            return mappings
+            
+        self.logger.debug(f"Processing {len(headers)} headers for {tab_name}")
         
-        # Only attempt to map headers that could potentially map to valid fields
-        for header in input_headers:
-            # First try direct mappings from schema synonyms
+        # Helper function to normalize strings for comparison
+        def normalize(s: str) -> str:
+            return s.lower().replace(' ', '_').replace('-', '_')
+        
+        # First try exact matches and saved mappings
+        for header in headers:
+            # Check saved mappings first
+            mapping_key = f"{tab_name}:{header}"
+            if mapping_key in self.saved_mappings:
+                mappings[header] = self.saved_mappings[mapping_key]
+                continue
+                
+            normalized_header = normalize(header)
+            matched = False
+            
+            # Try exact match with schema fields
             for field, props in tab_schema.items():
-                if header.lower() in [syn.lower() for syn in props.get('synonyms', [])]:
+                if normalize(field) == normalized_header:
                     mappings[header] = field
+                    matched = True
                     break
-
+                    
+                # Try synonyms
+                if not matched:
+                    synonyms = props.get('synonyms', [])
+                    if any(normalize(syn) == normalized_header for syn in synonyms):
+                        mappings[header] = field
+                        matched = True
+                        break
+        
+        # Try fuzzy matching for remaining unmapped headers
+        unmapped_headers = [h for h in headers if h not in mappings]
+        for header in unmapped_headers:
+            best_match = None
+            best_score = 60  # Minimum match score threshold
+            normalized_header = normalize(header)
+            
+            for field, props in tab_schema.items():
+                # Skip if field is already mapped
+                if field in mappings.values():
+                    continue
+                    
+                # Calculate match scores including normalized comparison
+                field_score = self.calculate_match_score(normalized_header, normalize(field))
+                synonym_scores = [
+                    self.calculate_match_score(normalized_header, normalize(syn))
+                    for syn in props.get('synonyms', [])
+                ]
+                
+                max_score = max([field_score] + synonym_scores)
+                if max_score > best_score:
+                    best_score = max_score
+                    best_match = field
+            
+            if best_match:
+                mappings[header] = best_match
+        
+        self.logger.info(f"Generated mappings for {tab_name}: {mappings}")
         return mappings
 
     def _get_prominent_fields(self, tab_name: str) -> List[str]:
@@ -122,40 +209,80 @@ class HeaderMapper:
         preview_data: pd.DataFrame
     ) -> Dict[str, str]:
         """Review and confirm mappings with focus on mandatory fields first."""
-        # Filter out any mappings to fields not in schema
         tab_schema = self.schema.get(tab_name, {})
-        valid_fields = set(tab_schema.keys())
-        mappings = {k: v for k, v in mappings.items() if v in valid_fields}
+        valid_fields = sorted(tab_schema.keys())
 
-        # First check if we have saved mappings for this tab
-        for header in input_headers:
-            mapping_key = f"{tab_name}:{header}"
-            if mapping_key in self.saved_mappings:
-                mappings[header] = self.saved_mappings[mapping_key]
+        while True:
+            clear_screen()
+            # Use the new print_mappings_preview function
+            self.print_mappings_preview({k: v for k, v in mappings.items()}, {tab_name: preview_data})
 
-        print("\nCurrent mappings:")
-        for header, target in mappings.items():
-            if target:
-                print(f"'{header}' → '{target}'")
-
-        # Get mandatory fields from schema
-        mandatory_fields = self.get_mandatory_fields(tab_name)
-
-        # Check for unmapped mandatory fields
-        mapped_fields = set(mappings.values())
-        unmapped_mandatory = mandatory_fields - mapped_fields
-        if unmapped_mandatory:
-            print("\nMandatory fields requiring mapping:")
-            for field in unmapped_mandatory:
-                print(f"  • {field}")
-
-        print("\nOptions:")
-        print("1) Continue with current mappings")
-        print("2) Start over (clear all mappings)")
-        choice = input("Choose option (1-2): ")
-        
-        if choice == "2":
-            return self.start_over_mapping(input_headers, tab_name, preview_data)
+            choice = input().lower().strip()
+            
+            if choice == 'c':
+                # Validate mandatory fields are mapped before continuing
+                mandatory_fields = self.get_mandatory_fields(tab_name)
+                unmapped_mandatory = [field for field in mandatory_fields 
+                                    if field not in mappings.values()]
+                
+                if unmapped_mandatory:
+                    print(f"\n{Fore.RED}Warning: The following mandatory fields are unmapped:{Style.RESET_ALL}")
+                    for field in unmapped_mandatory:
+                        print(f"- {field}")
+                    print("\nPlease map these fields before continuing.")
+                    input("\nPress Enter to continue...")
+                    continue
+                break
+            elif choice == 's':
+                return self.start_over_mapping(input_headers, tab_name, preview_data)
+            else:
+                try:
+                    idx = int(choice)
+                    if 1 <= idx <= len(valid_fields):
+                        target_field = valid_fields[idx-1]
+                        current_source = next((k for k, v in mappings.items() if v == target_field), "(unmapped)")
+                        
+                        print(f"\nModifying mapping for: '{target_field}'")
+                        print(f"Currently mapped to: '{current_source}'")
+                        
+                        # Show available source attributes with sample values
+                        print("\nAvailable source attributes:")
+                        for src_idx, header in enumerate(input_headers, 1):
+                            mapped_to = mappings.get(header, "")
+                            status = f" (currently mapped to '{mapped_to}')" if mapped_to else ""
+                            if header in preview_data.columns:
+                                sample_values = preview_data[header].dropna().unique()[:3].tolist()
+                                print(f"{src_idx}) '{header}'{status}")
+                                print(f"   Sample values: {sample_values}")
+                            else:
+                                print(f"{src_idx}) '{header}'{status}")
+                        
+                        print("0) Remove mapping")
+                        
+                        src_choice = input("\nChoose source attribute (0-N): ")
+                        try:
+                            src_idx = int(src_choice)
+                            if src_idx == 0:
+                                # Remove any existing mapping to this target
+                                for k, v in list(mappings.items()):
+                                    if v == target_field:
+                                        del mappings[k]
+                            elif 1 <= src_idx <= len(input_headers):
+                                source_header = input_headers[src_idx-1]
+                                # Remove any existing mapping to this target
+                                for k, v in list(mappings.items()):
+                                    if v == target_field:
+                                        del mappings[k]
+                                # Remove any existing mapping from this source
+                                if source_header in mappings:
+                                    del mappings[source_header]
+                                mappings[source_header] = target_field
+                                print(f"\n✓ Updated mapping: '{target_field}' ← '{source_header}'")
+                        except ValueError:
+                            print("Invalid choice, keeping current mapping")
+                            
+                except ValueError:
+                    print("Invalid choice, please try again")
 
         # Save confirmed mappings
         for header, target in mappings.items():
@@ -163,7 +290,7 @@ class HeaderMapper:
                 mapping_key = f"{tab_name}:{header}"
                 self.saved_mappings[mapping_key] = target
 
-        self.save_mappings(mappings)
+        self.save_mappings(self.saved_mappings)
         return mappings
 
     def calculate_match_score(self, source: str, target: str) -> int:
@@ -305,3 +432,24 @@ class HeaderMapper:
                         mappings[header] = target_field
                 except ValueError:
                     pass
+
+    def print_mappings_preview(self, mappings: Dict[str, str], data: Dict[str, pd.DataFrame]) -> None:
+        """Display current mappings with sample data."""
+        print(f"\n{Fore.CYAN}Current Mappings{Style.RESET_ALL}")
+        print("=" * 80)
+
+        for source_header, target_field in mappings.items():
+            # Find which sheet contains this header
+            for sheet_name, df in data.items():
+                if source_header in df.columns:
+                    samples = df[source_header].dropna().unique()[:3].tolist()
+                    samples_str = ", ".join(str(s) for s in samples)
+                    print(f"{Fore.WHITE}'{target_field}' ← {Fore.GREEN}'{source_header}'{Style.RESET_ALL}")
+                    print(f"   Samples: [{samples_str}]")
+                    break
+
+        print("\nOptions:")
+        print("1-N) Select target field to modify")
+        print("c) Continue with current mappings")
+        print("s) Start over (clear all mappings)")
+        print("\nChoose option (number, c, or s):")

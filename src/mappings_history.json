@@ -3,7 +3,7 @@
   "Users:First name": "first_name",
   "Users:Last name": "last_name",
   "Users:Email": "email",
-  "Users:Active": "is_active",
+  "Users:Active": "created_at",
   "Users:Created": "created_at",
   "Users:Updated": "updated_at",
   "Users:Last login": "last_login_at",
@@ -63,5 +63,8 @@
   "source_group_id": "parent_group_id",
   "destination_group_id": "child_group_id",
   "Groups:Description": "group_description",
-  "Description": "group_description"
+  "Description": "group_description",
+  "Users:IDM Status": "is_active",
+  "UserGroups:User ID": "user_id",
+  "UserGroups:Group": "group_id"
 }

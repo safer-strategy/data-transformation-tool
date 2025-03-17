@@ -1,0 +1,27 @@
+{
+    "tabs": {
+        "Users": {
+            "required_fields": [
+                "user_id",
+                "first_name",
+                "last_name",
+                "email",
+                "active"
+            ]
+        },
+        "Groups": {
+            "required_fields": [
+                "name",
+                "manager",
+                "type",
+                "active"
+            ]
+        },
+        "User_Groups": {
+            "required_fields": [
+                "user_id",
+                "group_name"
+            ]
+        }
+    }
+}

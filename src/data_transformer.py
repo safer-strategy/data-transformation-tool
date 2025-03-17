@@ -1,7 +1,7 @@
 
 import pandas as pd
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 import json
 import hashlib
@@ -10,37 +10,118 @@ logger = logging.getLogger(__name__)
 
 class DataTransformer:
     def __init__(self, schema_file: str):
+        self.schema_file = schema_file
         self.logger = logging.getLogger(__name__)
+        self.group_id_map = {}  # Initialize the group_id_map
+        self.transformed_data = {}  # Initialize transformed_data as empty dict
+        
         with open(schema_file) as f:
             self.schema = json.load(f)
-        self.group_id_map = {}  # Store mapping between original group identifiers and new incremental IDs
 
-    def transform_data_tab(self, df: pd.DataFrame, mappings: Dict[str, str], tab_name: str) -> pd.DataFrame:
-        """Transform data for a specific tab."""
-        if df.empty:
-            if tab_name == "Groups":
-                return pd.DataFrame(columns=['group_id', 'group_name', 'group_description'])
-            return pd.DataFrame()
+    def transform_data(self, data: Dict[str, pd.DataFrame], mappings: Dict[str, Dict]) -> Dict[str, pd.DataFrame]:
+        """Transform all data according to mappings."""
+        transformed_data = {}
+        
+        # Transform Users and Groups first
+        for tab_name in ['Users', 'Groups']:
+            if tab_name in data:
+                df = data[tab_name]
+                transformed_df = self.transform_data_tab(df, mappings, tab_name)
+                if transformed_df is not None:
+                    transformed_data[tab_name] = transformed_df
+        
+        # Try to get User Groups from dedicated tab
+        if 'User Groups' in data:
+            transformed_df = self.transform_data_tab(data['User Groups'], mappings, 'User Groups')
+            if transformed_df is not None and not transformed_df.empty:
+                transformed_data['User Groups'] = transformed_df
+        
+        # If no User Groups relationships found, try to create them
+        if 'User Groups' not in transformed_data or transformed_data['User Groups'].empty:
+            logger.info("No User Groups relationships found in dedicated tab, attempting to create from available data")
+            relationships_df = self.create_user_group_relationships(transformed_data)
+            transformed_data['User Groups'] = relationships_df
+        
+        # Transform remaining tabs
+        for tab_name, df in data.items():
+            if tab_name not in ['Users', 'Groups', 'User Groups']:
+                transformed_df = self.transform_data_tab(df, mappings, tab_name)
+                if transformed_df is not None:
+                    transformed_data[tab_name] = transformed_df
+        
+        return transformed_data
 
-        # Create new DataFrame with mapped columns
-        transformed = pd.DataFrame()
-        
-        # Map columns according to mappings
-        for source, target in mappings.items():
-            if source in df.columns:
-                transformed[target] = df[source].copy()
-        
-        # Special handling for different tabs
-        if tab_name == "Groups":
-            return self._transform_groups(transformed)
-        elif tab_name == "Users":
-            return self._transform_users(transformed)
-        elif tab_name == "Roles":
-            return self._transform_roles(transformed)
-        elif tab_name == "Resources":
-            return self._transform_resources(transformed)
-        else:
-            return self._transform_relationships(transformed, tab_name)
+    def transform_data_tab(self, df: pd.DataFrame, mappings: Dict[str, Dict], tab_name: str) -> Optional[pd.DataFrame]:
+        """Transform a single data tab according to mappings."""
+        try:
+            # Special handling for User Groups tab
+            if tab_name.lower().replace(" ", "") == "usergroups":
+                logger.info(f"Processing User Groups tab with columns: {df.columns.tolist()}")
+                
+                # Try to find user and group columns with flexible matching
+                user_cols = [col for col in df.columns if any(term in col.lower() for term in ['user', 'userid', 'user_id', 'username'])]
+                group_cols = [col for col in df.columns if any(term in col.lower() for term in ['group', 'groupid', 'group_id', 'groupname'])]
+                
+                logger.info(f"Found user columns: {user_cols}")
+                logger.info(f"Found group columns: {group_cols}")
+                
+                if user_cols and group_cols:
+                    relationships = []
+                    user_col = user_cols[0]
+                    group_col = group_cols[0]
+                    
+                    # Create a mapping of usernames/emails to user_ids if needed
+                    username_to_userid = {}
+                    if 'Users' in self.transformed_data:
+                        users_df = self.transformed_data['Users']
+                        for _, user in users_df.iterrows():
+                            if pd.notna(user.get('user_id')):
+                                if pd.notna(user.get('username')):
+                                    username_to_userid[str(user['username']).strip()] = str(user['user_id'])
+                                if pd.notna(user.get('email')):
+                                    username_to_userid[str(user['email']).strip()] = str(user['user_id'])
+                    
+                    # Process each relationship
+                    for _, row in df.iterrows():
+                        user_value = str(row[user_col]).strip() if pd.notna(row[user_col]) else None
+                        group_value = str(row[group_col]).strip() if pd.notna(row[group_col]) else None
+                        
+                        if user_value and group_value:
+                            # Try to get user_id from mapping if necessary
+                            user_id = username_to_userid.get(user_value, user_value)
+                            group_id = self.group_id_map.get(group_value, group_value)
+                            
+                            if user_id and group_id:
+                                relationships.append({
+                                    'user_id': user_id,
+                                    'group_id': group_id
+                                })
+                    
+                    # Create final DataFrame and remove duplicates
+                    result_df = pd.DataFrame(relationships)
+                    if not result_df.empty:
+                        result_df = result_df.drop_duplicates()
+                        logger.info(f"Created {len(result_df)} unique user-group relationships")
+                        return result_df
+                    else:
+                        logger.warning("No valid user-group relationships created")
+                        return pd.DataFrame(columns=['user_id', 'group_id'])
+                else:
+                    logger.warning(f"Could not find user and group columns in User Groups tab. Available columns: {df.columns.tolist()}")
+                    return pd.DataFrame(columns=['user_id', 'group_id'])
+                
+            # Regular transformation for other tabs
+            transformed_data = {}
+            for target_field, source_info in mappings.items():
+                source_header = source_info['header']
+                if source_header in df.columns:
+                    transformed_data[target_field] = df[source_header]
+            
+            return pd.DataFrame(transformed_data)
+            
+        except Exception as e:
+            self.logger.error(f"Error transforming data for tab {tab_name}: {str(e)}")
+            return None
 
     def _transform_users(self, df: pd.DataFrame) -> pd.DataFrame:
         """Transform Users tab data."""
@@ -94,35 +175,46 @@ class DataTransformer:
 
     def _transform_groups(self, df: pd.DataFrame) -> pd.DataFrame:
         """Transform Groups tab data according to schema rules."""
-        # Define the exact column order
         COLUMN_ORDER = ['group_id', 'group_name', 'group_description']
         
         if df.empty:
             return pd.DataFrame(columns=COLUMN_ORDER)
 
-        # Create a new empty DataFrame with the correct column order
-        result = pd.DataFrame(columns=COLUMN_ORDER)
+        # Create a clean DataFrame with just the columns we need
+        clean_df = pd.DataFrame({
+            'group_name': df['group_name'] if 'group_name' in df.columns else df['Name'],
+            'group_description': df['group_description'] if 'group_description' in df.columns 
+                               else df.get('Description', None)
+        })
         
-        # Populate data in the correct order
-        result.loc[:, 'group_id'] = range(1, len(df) + 1)
-        result.loc[:, 'group_name'] = df['group_name'] if 'group_name' in df.columns else ''
-        result.loc[:, 'group_description'] = (
-            df['group_description'] if 'group_description' in df.columns 
-            else df['group_name'] if 'group_name' in df.columns 
-            else ''
-        )
+        # Remove any rows where group_name is empty or NaN
+        clean_df = clean_df.dropna(subset=['group_name'])
+        clean_df = clean_df[clean_df['group_name'].str.strip() != '']
         
-        # Fill missing descriptions with group names
-        mask = result['group_description'].isna()
-        result.loc[mask, 'group_description'] = result.loc[mask, 'group_name']
+        # Remove any duplicates
+        clean_df = clean_df.drop_duplicates(subset=['group_name'])
+        
+        # Generate sequential group_ids
+        clean_df['group_id'] = range(1, len(clean_df) + 1)
+        
+        # Reset and create the group_id_map
+        self.group_id_map.clear()  # Clear existing mappings
         
         # Store mapping for relationship resolution
-        for idx, row in result.iterrows():
-            if pd.notna(row['group_name']):
-                self.group_id_map[str(row['group_name'])] = row['group_id']
+        for _, row in clean_df.iterrows():
+            group_name = str(row['group_name']).strip()
+            if group_name:
+                self.group_id_map[group_name] = row['group_id']
         
-        # Final force of column order
-        return result[COLUMN_ORDER].copy()
+        logger.info(f"Created {len(self.group_id_map)} group ID mappings")
+        logger.debug(f"First 5 group mappings: {dict(list(self.group_id_map.items())[:5])}")
+        
+        # Fill missing descriptions without using inplace
+        clean_df = clean_df.assign(
+            group_description=lambda x: x['group_description'].fillna(x['group_name'])
+        )
+        
+        return clean_df[COLUMN_ORDER].copy()
 
     def _transform_roles(self, df: pd.DataFrame) -> pd.DataFrame:
         """Transform Roles tab data."""
@@ -167,37 +259,23 @@ class DataTransformer:
         return transformed_rel
 
     def _transform_boolean_to_yes_no(self, value) -> str:
-        """Transform various status values to Yes/No format using fuzzy matching."""
+        """Transform various boolean/status values to 'Yes' or 'No'."""
         if pd.isna(value):
-            return "No"
+            return 'No'
         
         value_str = str(value).lower().strip()
-        self.logger.debug(f"Processing status value: '{value_str}'")
         
-        # Define sets of values that should be considered active/inactive
-        active_values = {
-            'active',
-            'yes',
-            'true',
-            't',
-            '1',
-            'enabled',
-            'on',
-            'y'
-        }
+        # Values that mean "Yes"
+        active_values = {'true', '1', 'yes', 'y', 'active', 'enabled', 't'}
         
-        # Simple exact match first
+        self.logger.debug(f"Processing status value: '{value}'")
+        
         if value_str in active_values:
-            self.logger.debug(f"Exact match found for active value: '{value_str}'")
-            return "Yes"
+            self.logger.debug(f"Exact match found for active value: '{value}'")
+            return 'Yes'
         
-        # For 'Active' specifically, do a case-insensitive exact match
-        if value_str == "active":
-            self.logger.debug(f"Case-insensitive match found for 'active': '{value_str}'")
-            return "Yes"
-        
-        self.logger.debug(f"Value '{value_str}' not matched as active, returning 'No'")
-        return "No"
+        self.logger.debug(f"Value '{value}' not matched as active, returning 'No'")
+        return 'No'
 
     def _transform_datetime_to_iso(self, value) -> str:
         """Transform datetime to ISO 8601 format."""
@@ -225,3 +303,142 @@ class DataTransformer:
             self.logger.warning(f"Failed to parse datetime value '{value}': {str(e)}")
         
         return None
+
+    def _transform_user_groups(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Transform User Groups relationships using username and group_name."""
+        logger.info(f"Processing User Groups relationships from {len(df)} records")
+        logger.debug(f"Input columns: {df.columns.tolist()}")
+        
+        # Create mappings from Users table
+        if 'Users' in self.transformed_data:
+            users_df = self.transformed_data['Users']
+            user_mappings = {}
+            
+            # Build comprehensive user mapping
+            for _, user in users_df.iterrows():
+                user_id = user.get('user_id')
+                username = user.get('username')
+                email = user.get('email')
+                
+                if user_id:
+                    if username: user_mappings[username] = user_id
+                    if email: user_mappings[email] = user_id
+                elif username and email:
+                    user_mappings[username] = email
+                    user_mappings[email] = email
+                elif username:
+                    user_mappings[username] = username
+                elif email:
+                    user_mappings[email] = email
+            
+            logger.info(f"Created user mappings for {len(user_mappings)} identifiers")
+        else:
+            logger.error("Users table not found in transformed data")
+            return pd.DataFrame(columns=['user_id', 'group_id'])
+
+        # Create the relationships
+        relationships = []
+        for _, row in df.iterrows():
+            # Try multiple possible column names for user identifier
+            user_identifier = None
+            for col in ['user_id', 'username', 'email', 'User ID', 'Username', 'Email']:
+                if col in row and pd.notna(row[col]):
+                    user_identifier = str(row[col]).strip()
+                    break
+                    
+            # Try multiple possible column names for group
+            group_name = None
+            for col in ['group_name', 'group', 'Group', 'Group Name']:
+                if col in row and pd.notna(row[col]):
+                    group_name = str(row[col]).strip()
+                    break
+
+            if user_identifier and group_name:
+                user_id = user_mappings.get(user_identifier, user_identifier)
+                group_id = self.group_id_map.get(group_name)
+                
+                if group_id:  # We always need a valid group_id
+                    relationships.append({
+                        'user_id': user_id,
+                        'group_id': group_id
+                    })
+                else:
+                    logger.warning(f"Could not find group_id for group_name: {group_name}")
+
+        # Create final DataFrame and remove duplicates
+        result_df = pd.DataFrame(relationships)
+        if not result_df.empty:
+            result_df = result_df.drop_duplicates()
+            logger.info(f"Created {len(result_df)} unique user-group relationships")
+        else:
+            logger.warning("No valid user-group relationships created")
+            result_df = pd.DataFrame(columns=['user_id', 'group_id'])
+        
+        return result_df
+
+    def organize_flattened_data(self, data: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
+        """Process data into separate sheets according to schema rules."""
+        organized_data = {}
+        
+        # Process Users
+        if 'Users' in data:
+            users_df = data['Users'].copy()
+            column_mapping = {
+                'User ID': 'user_id',
+                'First name': 'first_name',
+                'Last name': 'last_name',
+                'Email': 'email',
+                'Active': 'is_active',
+                'Created': 'created_at',
+                'Updated': 'updated_at',
+                'Last login': 'last_login_at'
+            }
+            users_df.rename(columns=column_mapping, inplace=True)
+            organized_data['Users'] = self._transform_users(users_df)
+            logging.info(f"Processed Users data: {len(users_df)} records")
+
+        # Process Groups first to build the group_id_map
+        if 'Groups' in data:
+            groups_df = data['Groups'].copy()
+            groups_df.rename(columns={
+                'Name': 'group_name',
+                'Description': 'group_description'
+            }, inplace=True)
+            organized_data['Groups'] = self._transform_groups(groups_df)
+            logging.info(f"Processed Groups data: {len(groups_df)} records")
+
+        # Process User Groups directly from the input sheet
+        if 'User Groups' in data and self.group_id_map:
+            user_groups_df = data['User Groups'].copy()
+            user_group_pairs = []
+            
+            # Log the input data for debugging
+            logging.info(f"Processing User Groups sheet with columns: {user_groups_df.columns.tolist()}")
+            logging.info(f"First few rows of User Groups:\n{user_groups_df.head()}")
+            
+            for _, row in user_groups_df.iterrows():
+                user_id = str(row['User ID']).strip()
+                group_name = str(row['Group']).strip()
+                
+                if group_name in self.group_id_map:
+                    user_group_pairs.append({
+                        'user_id': user_id,
+                        'group_id': self.group_id_map[group_name]
+                    })
+                else:
+                    logging.warning(f"Group not found in mapping: {group_name}")
+            
+            if user_group_pairs:
+                organized_data['User Groups'] = pd.DataFrame(user_group_pairs).drop_duplicates()
+                logging.info(f"Created {len(organized_data['User Groups'])} user-group relationships")
+            else:
+                logging.warning("No valid user-group relationships found")
+                organized_data['User Groups'] = pd.DataFrame(columns=['user_id', 'group_id'])
+
+        # Log final state
+        for name, df in organized_data.items():
+            logging.info(f"{name} shape: {df.shape}, columns: {df.columns.tolist()}")
+            if not df.empty:
+                logging.debug(f"{name} first few rows:\n{df.head()}")
+
+        return organized_data

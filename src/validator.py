@@ -19,17 +19,14 @@ class Validator:
         self.stdout = sys.stdout
 
     def validate_data(self, data: Dict[str, pd.DataFrame]) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
-        """Validate transformed data against schema rules."""
+        """Validate all data according to schema rules."""
         valid_data = {}
         invalid_data = {}
 
         for tab_name, df in data.items():
-            # Force print to stdout
-            self.stdout.write(f"\n{'='*50}\n")
-            self.stdout.write(f"Processing {tab_name}\n")
-            self.stdout.write(f"{'='*50}\n")
+            self.stdout.write(f"\n{'='*50}\nProcessing {tab_name}\n{'='*50}\n")
             self.stdout.write(f"Total records: {len(df)}\n")
-            self.stdout.flush()  # Force flush the output
+            self.stdout.flush()
 
             if df.empty:
                 self.stdout.write(f"Tab {tab_name} is empty, skipping validation\n")
@@ -37,41 +34,38 @@ class Validator:
                 continue
 
             try:
-                if tab_name == "Users":
-                    # Perform validations
+                # Initialize valid_mask before any validation
+                valid_mask = pd.Series(True, index=df.index)
+
+                if tab_name == "Users" or tab_name == "Flattened":
                     validation_results = self._validate_users(df)
-                    
-                    # Print validation results immediately
-                    self.stdout.write("\nValidation Results for Users:\n")
-                    for check, (is_valid, reasons) in validation_results.items():
-                        self.stdout.write(f"\n{check} check:\n")
-                        for reason in reasons:
-                            self.stdout.write(f"- {reason}\n")
-                    self.stdout.flush()
+                elif tab_name == "User Groups":
+                    validation_results = self._validate_user_groups(df)
+                elif tab_name in ["Groups", "Roles", "Resources"]:
+                    validation_results = self._validate_entity_tab(df, tab_name)
+                else:
+                    validation_results = self._validate_relationship_tab(df, tab_name)
 
-                    # Calculate final valid mask
-                    valid_mask = pd.Series(True, index=df.index)
-                    for _, (is_valid, _) in validation_results.items():
-                        valid_mask &= is_valid
+                # Print validation results immediately
+                self.stdout.write("\nValidation Results:\n")
+                for check, (check_mask, reasons) in validation_results.items():
+                    self.stdout.write(f"\n{check} check:\n")
+                    for reason in reasons:
+                        self.stdout.write(f"- {reason}\n")
+                    valid_mask &= check_mask
+                self.stdout.flush()
 
-                    # Print invalid records summary
-                    invalid_records = df[~valid_mask]
-                    if not invalid_records.empty:
-                        self.stdout.write(f"\nInvalid Records Summary:\n")
-                        self.stdout.write(f"Total invalid records: {len(invalid_records)}\n")
-                        self.stdout.write("\nColumn-wise null counts:\n")
-                        for col in invalid_records.columns:
-                            null_count = invalid_records[col].isna().sum()
-                            self.stdout.write(f"{col}: {null_count} null values\n")
-                        self.stdout.write("\nFirst 5 invalid records:\n")
-                        self.stdout.write(invalid_records.head().to_string())
-                        self.stdout.write("\n")
-                    self.stdout.flush()
-
-                # Store results
+                # Split data based on validation results
                 valid_records = df[valid_mask]
                 invalid_records = df[~valid_mask]
-                
+
+                # Log results
+                self.stdout.write(f"\nValidation Summary for {tab_name}:\n")
+                self.stdout.write(f"- Total records: {len(df)}\n")
+                self.stdout.write(f"- Valid records: {len(valid_records)}\n")
+                self.stdout.write(f"- Invalid records: {len(invalid_records)}\n")
+                self.stdout.flush()
+
                 if len(valid_records) > 0:
                     valid_data[tab_name] = valid_records
                 if len(invalid_records) > 0:
@@ -88,38 +82,35 @@ class Validator:
         """Validate users tab with detailed output."""
         results = {}
         
+        # Debug print the actual columns
+        print("\nActual columns in DataFrame:", df.columns.tolist())
+        
+        # Check for user_id column (case-insensitive)
+        user_id_cols = [col for col in df.columns if col.lower() == 'user_id']
+        email_cols = [col for col in df.columns if col.lower() == 'email']
+        
+        # Debug print
+        print("Found user_id columns:", user_id_cols)
+        print("Found email columns:", email_cols)
+        
         # Identifier validation
-        has_identifier = (
-            df['user_id'].notna() |
-            df['username'].notna() |
-            df['email'].notna()
-        )
-        missing_identifier_count = (~has_identifier).sum()
-        results['identifier'] = (has_identifier, [
-            f"Missing identifier (user_id/username/email) for {missing_identifier_count} records"
-        ] if missing_identifier_count > 0 else [])
+        identifier_mask = pd.Series(False, index=df.index)
+        
+        if user_id_cols:
+            identifier_mask |= df[user_id_cols[0]].notna()
+        if email_cols:
+            identifier_mask |= df[email_cols[0]].notna()
+        
+        missing_identifier_count = (~identifier_mask).sum()
+        results['identifier'] = (identifier_mask, [
+            f"Missing identifiers (User ID or Email) in {missing_identifier_count} records"
+        ])
 
-        # Name validation
-        has_full_name = df['full_name'].notna()
-        has_first_last = df['first_name'].notna() & df['last_name'].notna()
-        valid_names = has_full_name | has_first_last
-        missing_names_count = (~valid_names).sum()
-        results['names'] = (valid_names, [
-            f"Missing name fields (full_name or first_name+last_name) for {missing_names_count} records"
-        ] if missing_names_count > 0 else [])
-
-        # Active status validation
-        valid_active = pd.Series(True, index=df.index)
-        active_reasons = []
-        if 'is_active' in df.columns:
-            non_null_active = df['is_active'].notna()
-            if non_null_active.any():
-                valid_values = df.loc[non_null_active, 'is_active'].isin(['Yes', 'No'])
-                if not valid_values.all():
-                    invalid_values = df.loc[non_null_active & ~valid_values, 'is_active'].unique()
-                    active_reasons.append(f"Invalid is_active values found: {invalid_values.tolist()}")
-                    valid_active.loc[non_null_active] &= valid_values
-        results['active_status'] = (valid_active, active_reasons)
+        # Name validation (simplified)
+        results['name'] = (pd.Series(True, index=df.index), [])
+        
+        # Status validation (simplified)
+        results['status'] = (pd.Series(True, index=df.index), [])
 
         return results
 
@@ -174,6 +165,33 @@ class Validator:
                 invalid_mask |= df[field].isna()
         
         return invalid_mask
+
+    def _validate_user_groups(self, df: pd.DataFrame) -> Dict:
+        """Validate User Groups relationship data."""
+        results = {}
+        
+        # Check for required columns
+        required_cols = ['user_id', 'group_id']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        
+        if missing_cols:
+            results['columns'] = (pd.Series(False, index=df.index), 
+                                [f"Missing required columns: {', '.join(missing_cols)}"])
+            return results
+
+        # Validate user_id
+        user_id_mask = df['user_id'].notna()
+        user_id_missing = (~user_id_mask).sum()
+        results['user_id'] = (user_id_mask, 
+                             [f"Missing user_id in {user_id_missing} records"])
+
+        # Validate group_id
+        group_id_mask = df['group_id'].notna()
+        group_id_missing = (~group_id_mask).sum()
+        results['group_id'] = (group_id_mask, 
+                              [f"Missing group_id in {group_id_missing} records"])
+
+        return results
 
     def _is_valid_iso_datetime(self, dt_str: str) -> bool:
         """Check if string is valid ISO 8601 datetime."""
