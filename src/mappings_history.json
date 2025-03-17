@@ -66,5 +66,10 @@
   "Description": "group_description",
   "Users:IDM Status": "is_active",
   "UserGroups:User ID": "user_id",
-  "UserGroups:Group": "group_id"
+  "UserGroups:Group": "group_id",
+  "Users:is_active": "is_active",
+  "Users:created_at": "created_at",
+  "Users:updated_at": "updated_at",
+  "Users:last_login_at": "last_login_at",
+  "Groups:group_description": "group_description"
 }
