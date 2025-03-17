@@ -22,25 +22,25 @@ class DataTransformer:
         """Transform all data according to mappings."""
         transformed_data = {}
         
-        # Transform Users and Groups first
-        for tab_name in ['Users', 'Groups']:
-            if tab_name in data:
-                df = data[tab_name]
-                transformed_df = self.transform_data_tab(df, mappings, tab_name)
-                if transformed_df is not None:
-                    transformed_data[tab_name] = transformed_df
+        # Transform Users if present
+        if 'Users' in data:
+            df = data['Users']
+            transformed_df = self.transform_data_tab(df, mappings, 'Users')
+            if transformed_df is not None:
+                transformed_data['Users'] = transformed_df
         
-        # Try to get User Groups from dedicated tab
-        if 'User Groups' in data:
+        # Transform Groups if present
+        if 'Groups' in data:
+            df = data['Groups']
+            transformed_df = self.transform_data_tab(df, mappings, 'Groups')
+            if transformed_df is not None:
+                transformed_data['Groups'] = transformed_df
+        
+        # Transform User Groups only if both Users and Groups are present
+        if 'User Groups' in data and 'Users' in transformed_data and 'Groups' in transformed_data:
             transformed_df = self.transform_data_tab(data['User Groups'], mappings, 'User Groups')
             if transformed_df is not None and not transformed_df.empty:
                 transformed_data['User Groups'] = transformed_df
-        
-        # If no User Groups relationships found, try to create them
-        if 'User Groups' not in transformed_data or transformed_data['User Groups'].empty:
-            logger.info("No User Groups relationships found in dedicated tab, attempting to create from available data")
-            relationships_df = self.create_user_group_relationships(transformed_data)
-            transformed_data['User Groups'] = relationships_df
         
         # Transform remaining tabs
         for tab_name, df in data.items():
@@ -54,70 +54,31 @@ class DataTransformer:
     def transform_data_tab(self, df: pd.DataFrame, mappings: Dict[str, Dict], tab_name: str) -> Optional[pd.DataFrame]:
         """Transform a single data tab according to mappings."""
         try:
-            # Special handling for User Groups tab
-            if tab_name.lower().replace(" ", "") == "usergroups":
-                logger.info(f"Processing User Groups tab with columns: {df.columns.tolist()}")
-                
-                # Try to find user and group columns with flexible matching
-                user_cols = [col for col in df.columns if any(term in col.lower() for term in ['user', 'userid', 'user_id', 'username'])]
-                group_cols = [col for col in df.columns if any(term in col.lower() for term in ['group', 'groupid', 'group_id', 'groupname'])]
-                
-                logger.info(f"Found user columns: {user_cols}")
-                logger.info(f"Found group columns: {group_cols}")
-                
-                if user_cols and group_cols:
-                    relationships = []
-                    user_col = user_cols[0]
-                    group_col = group_cols[0]
-                    
-                    # Create a mapping of usernames/emails to user_ids if needed
-                    username_to_userid = {}
-                    if 'Users' in self.transformed_data:
-                        users_df = self.transformed_data['Users']
-                        for _, user in users_df.iterrows():
-                            if pd.notna(user.get('user_id')):
-                                if pd.notna(user.get('username')):
-                                    username_to_userid[str(user['username']).strip()] = str(user['user_id'])
-                                if pd.notna(user.get('email')):
-                                    username_to_userid[str(user['email']).strip()] = str(user['user_id'])
-                    
-                    # Process each relationship
-                    for _, row in df.iterrows():
-                        user_value = str(row[user_col]).strip() if pd.notna(row[user_col]) else None
-                        group_value = str(row[group_col]).strip() if pd.notna(row[group_col]) else None
-                        
-                        if user_value and group_value:
-                            # Try to get user_id from mapping if necessary
-                            user_id = username_to_userid.get(user_value, user_value)
-                            group_id = self.group_id_map.get(group_value, group_value)
-                            
-                            if user_id and group_id:
-                                relationships.append({
-                                    'user_id': user_id,
-                                    'group_id': group_id
-                                })
-                    
-                    # Create final DataFrame and remove duplicates
-                    result_df = pd.DataFrame(relationships)
-                    if not result_df.empty:
-                        result_df = result_df.drop_duplicates()
-                        logger.info(f"Created {len(result_df)} unique user-group relationships")
-                        return result_df
-                    else:
-                        logger.warning("No valid user-group relationships created")
-                        return pd.DataFrame(columns=['user_id', 'group_id'])
-                else:
-                    logger.warning(f"Could not find user and group columns in User Groups tab. Available columns: {df.columns.tolist()}")
-                    return pd.DataFrame(columns=['user_id', 'group_id'])
-                
-            # Regular transformation for other tabs
+            # Get the mappings for this tab
+            tab_mappings = mappings.get(tab_name, {}).get('mappings', {})
+            if not tab_mappings:
+                logger.warning(f"No mappings found for tab {tab_name}")
+                return None
+
+            # Create transformed DataFrame with mapped columns
             transformed_data = {}
-            for target_field, source_info in mappings.items():
-                source_header = source_info['header']
-                if source_header in df.columns:
-                    transformed_data[target_field] = df[source_header]
+            for target_field, source_field in tab_mappings.items():
+                if source_field in df.columns:
+                    transformed_data[target_field] = df[source_field]
+
+            transformed_df = pd.DataFrame(transformed_data)
+
+            # Apply specific transformations based on tab type
+            if tab_name == 'Users':
+                transformed_df = self._transform_users(transformed_df)
+            elif tab_name == 'Groups':
+                transformed_df = self._transform_groups(transformed_df)
+            elif tab_name == 'Roles':
+                transformed_df = self._transform_roles(transformed_df)
+            elif tab_name == 'Resources':
+                transformed_df = self._transform_resources(transformed_df)
             
-            return pd.DataFrame(transformed_data)
+            return transformed_df
             
         except Exception as e:
             self.logger.error(f"Error transforming data for tab {tab_name}: {str(e)}")
@@ -266,15 +227,28 @@ class DataTransformer:
         value_str = str(value).lower().strip()
         
         # Values that mean "Yes"
-        active_values = {'true', '1', 'yes', 'y', 'active', 'enabled', 't'}
+        active_values = {
+            'true', '1', 'yes', 'y', 'active', 'enabled', 't',
+            'invited'  # Adding 'invited' as an active status
+        }
+        
+        # Values that mean "No"
+        inactive_values = {
+            'false', '0', 'no', 'n', 'inactive', 'disabled', 'f',
+            'deactivated'  # Adding 'deactivated' as an inactive status
+        }
         
         self.logger.debug(f"Processing status value: '{value}'")
         
         if value_str in active_values:
-            self.logger.debug(f"Exact match found for active value: '{value}'")
+            self.logger.debug(f"Matched active value: '{value}' → 'Yes'")
             return 'Yes'
+        elif value_str in inactive_values:
+            self.logger.debug(f"Matched inactive value: '{value}' → 'No'")
+            return 'No'
         
-        self.logger.debug(f"Value '{value}' not matched as active, returning 'No'")
+        # Log unmatched values
+        self.logger.warning(f"Unmatched status value '{value}' defaulting to 'No'")
         return 'No'
 
     def _transform_datetime_to_iso(self, value) -> str:

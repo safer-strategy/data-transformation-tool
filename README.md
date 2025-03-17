@@ -1,51 +1,135 @@
-# Data Transformation and Validation Tool (v1.0.0)
-
-Custom App integration got you down? This tool is here to help!
-
-## TLDR
-A Python tool that converts messy user access management data into clean, standardized Excel files.
-
-### Quick Start
-```bash
-git clone <your-repo>
-cd data-transformation-tool
-./init.sh
-python src/main.py <input_file_or_directory>
-```
-
-### Key Features
-- Reads Excel/CSV files → Outputs standardized Excel
-- Smart column mapping with fuzzy matching
-- Validates user data (IDs, names, dates, relationships)
-- Separates valid/invalid records
-- Handles: Users, Groups, Roles, Resources, and their relationships
-
-### Input/Output
-- Put files in: `uploads/`
-- Get results in: `converts/`
-  - `converted_[filename].xlsx`: Valid records
-  - `invalid_records_[filename].xlsx`: Invalid records
-  - `validation.log`: Processing details
-
----
-
+# AMT-8000 Data Transformation Tool
 
 ## Overview
 
-This tool processes input files (Excel/CSV) containing user access management data, performs data transformation and validation according to predefined schema rules, and generates standardized output files.
+The AMT-8000 is a retro sci-fi themed command-line interface for transforming and validating data files. It provides an engaging, interactive experience while maintaining professional functionality.
+
+## Quick Start
+
+```bash
+# Process files
+python src/main.py uploads/
+
+# View transmission history
+python src/main.py --history
+
+# Delete transmissions matching pattern
+python src/main.py --delete "2024-01"
+
+# Disable color output
+python src/main.py uploads/ --no-color
+```
 
 ## Features
 
-- **Multi-format Input Support**: Handles Excel and CSV files
-- **Interactive Header Mapping**: Smart column mapping with fuzzy matching
-- **Data Validation**: Comprehensive validation based on schema rules
-- **Data Transformation**: Standardizes data formats including:
-  - Date/time to ISO 8601
-  - Boolean values to Yes/No
-  - User identification fields
-  - Relationship mappings
-- **Error Handling**: Separate output files for valid and invalid records
-- **Logging**: Detailed logging for debugging and audit trails
+### Retro Sci-Fi Interface
+- Stylized boot sequence with system checks
+- Mission-oriented terminology
+- Progress indicators and status messages
+- Color-coded output (with --no-color option)
+
+### Core Functionality
+- Multi-format input support (Excel/CSV)
+- Smart column mapping with fuzzy matching
+- Data validation and transformation
+- Progress tracking for long operations
+- Transmission history management
+
+### Command Options
+```bash
+python src/main.py [-h] [--no-color] [--page-size PAGE_SIZE] [--history] [--delete PATTERN] [input_path]
+
+arguments:
+  input_path            Input file or directory path
+  --no-color           Disable color output
+  --page-size PAGE_SIZE
+                      Number of items per page (default: 5)
+  --history           View transmission history
+  --delete PATTERN    Delete transmissions matching pattern
+```
+
+### Operation Phases
+
+1. **Boot Sequence**
+   - System initialization
+   - Component checks
+   - Mission parameters loading
+
+2. **Scan Phase**
+   - Directory scanning
+   - File detection
+   - Sample data preview
+
+3. **Alignment Phase**
+   - Column mapping
+   - Data validation
+   - Configuration review
+
+4. **Transmission Phase**
+   - Data transformation
+   - Progress tracking
+   - Output generation
+   - Log entry creation
+
+## Examples
+
+### Processing Files
+```bash
+# Process single file
+python src/main.py uploads/data.xlsx
+
+# Process directory
+python src/main.py uploads/
+```
+
+### Managing Transmissions
+```bash
+# View transmission history
+python src/main.py --history
+
+# Delete transmissions from January 2024
+python src/main.py --delete "2024-01"
+
+# Delete transmissions by filename pattern
+python src/main.py --delete "user_data"
+```
+
+### Display Options
+```bash
+# Disable color output
+python src/main.py uploads/ --no-color
+
+# Adjust page size for large datasets
+python src/main.py uploads/ --page-size 10
+```
+
+## Error Handling
+
+The AMT-8000 includes comprehensive error handling:
+- Input validation
+- File access checks
+- Data transformation validation
+- Progress monitoring
+- User interruption handling
+- Detailed error messages
+
+## Best Practices
+
+1. **File Preparation**
+   - Place input files in the `uploads/` directory
+   - Use consistent column naming
+   - Ensure file permissions are correct
+
+2. **Operation**
+   - Review mapping suggestions carefully
+   - Monitor progress indicators
+   - Check transmission logs regularly
+   - Use pattern-based cleanup for maintenance
+
+3. **Troubleshooting**
+   - Check error messages in transmission log
+   - Use --no-color for compatibility issues
+   - Adjust page size for different dataset sizes
 
 ## System Requirements
 

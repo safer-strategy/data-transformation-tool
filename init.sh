@@ -21,13 +21,6 @@ CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 NC='\033[0m'
 
-# Print header function
-print_header() {
-    echo -e "\n${MAGENTA}╔════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║${WHITE}         Excel Data Processor          ${MAGENTA}║${NC}"
-    echo -e "${MAGENTA}╚════════════════════════════════════════╝${NC}\n"
-}
-
 # Print section header
 print_section() {
     echo -e "\n${BLUE}▶ $1${NC}"
@@ -99,46 +92,16 @@ install_requirements() {
 }
 
 # Main execution starts here
-print_header
-
-# Ensure uploads directory exists
-if [ ! -d "$INPUT_DIR" ]; then
-    print_section "Creating uploads directory"
-    mkdir -p "$INPUT_DIR"
-    echo -e "${GREEN}✓${NC} Created uploads directory"
-fi
-
 # Setup virtual environment and install requirements
 setup_venv
 install_requirements
 
-# Process files
-print_section "Processing files"
-
-if [ ! -d "$INPUT_DIR" ]; then
-    echo -e "${RED}✗ Error: uploads directory not found${NC}"
-    exit 1
-fi
-
-# Get all Excel and CSV files
-files=($INPUT_DIR/*.xlsx $INPUT_DIR/*.csv(N))
-
-if [ ${#files[@]} -eq 0 ]; then
-    echo -e "${RED}✗ No Excel or CSV files found in uploads directory${NC}"
-    exit 1
-fi
-
-# Process the first file found
-input_file="${files[1]}"
-echo -e "${CYAN}Processing: ${WHITE}${input_file}${NC}"
-"$VENV_PYTHON" src/main.py "$input_file"
+# Launch the AMT-8000 CLI
+"$VENV_PYTHON" src/main.py "$INPUT_DIR"
 
 exit_code=$?
 
-if [ $exit_code -eq 0 ]; then
-    echo -e "\n${GREEN}✓ Processing completed successfully${NC}"
-else
+if [ $exit_code -ne 0 ]; then
     echo -e "\n${RED}✗ Processing failed${NC}"
+    exit $exit_code
 fi
-
-exit $exit_code

@@ -99,14 +99,27 @@ class DataValidator:
         """Validate is_active field."""
         valid_mask = pd.Series(True, index=df.index)
         reasons = []
+        
         if 'is_active' in df.columns:
-            non_null_active = df['is_active'].notna()
-            if non_null_active.any():
-                valid_active = df.loc[non_null_active, 'is_active'].isin(['Yes', 'No'])
-                if not valid_active.all():
-                    invalid_values = df.loc[non_null_active & ~valid_active, 'is_active'].unique()
+            # Check for null values
+            null_mask = df['is_active'].isna()
+            if null_mask.any():
+                count = null_mask.sum()
+                reasons.append(f"Found {count} records with null is_active values")
+                valid_mask &= ~null_mask
+            
+            # Check for valid values (only 'Yes' or 'No' allowed)
+            non_null_mask = ~null_mask
+            if non_null_mask.any():
+                valid_values = df.loc[non_null_mask, 'is_active'].isin(['Yes', 'No'])
+                if not valid_values.all():
+                    invalid_values = df.loc[non_null_mask & ~valid_values, 'is_active'].unique()
                     reasons.append(f"Invalid is_active values found: {invalid_values.tolist()}")
-                    valid_mask.loc[non_null_active] &= valid_active
+                    valid_mask &= ~(non_null_mask & ~valid_values)
+        else:
+            reasons.append("Missing required field: is_active")
+            valid_mask = pd.Series(False, index=df.index)
+        
         return valid_mask, reasons
 
     def _validate_dates(self, df: pd.DataFrame) -> Tuple[pd.Series, list]:

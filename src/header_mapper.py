@@ -453,3 +453,22 @@ class HeaderMapper:
         print("c) Continue with current mappings")
         print("s) Start over (clear all mappings)")
         print("\nChoose option (number, c, or s):")
+
+    def detect_possible_tabs(self, headers: List[str]) -> List[str]:
+        """Detect which tabs are likely present based on column headers."""
+        detected_tabs = []
+        headers_lower = [h.lower() for h in headers]
+        
+        # Define signature columns for each tab type
+        tab_signatures = {
+            'Users': ['user', 'username', 'email'],
+            'Groups': ['group', 'groupname'],
+            'Roles': ['role', 'permission', 'access'],
+            'Resources': ['resource', 'application']
+        }
+        
+        for tab_name, signatures in tab_signatures.items():
+            if any(any(sig in h for h in headers_lower) for sig in signatures):
+                detected_tabs.append(tab_name)
+        
+        return detected_tabs
